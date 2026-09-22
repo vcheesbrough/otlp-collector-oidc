@@ -1,0 +1,14 @@
+# Go
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+
+# ocb output
+/_build/
+
+# editors / OS
+.idea/
+.vscode/
+.DS_Store
