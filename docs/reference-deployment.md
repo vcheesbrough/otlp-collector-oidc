@@ -18,8 +18,8 @@ browser / phone ──► Traefik (TLS, rate limit by IP)
 ```
 
 One instance per **product environment** — `v-note` production, `v-note` dev, `bored`
-production — each on its product's hostname, so `deployment.environment` and the
-product are fixed by which deployment answered.
+production — each on its product's hostname, so `deployment.environment.name` and
+the product are fixed by which deployment answered.
 
 ## Identity provider
 
@@ -40,10 +40,11 @@ environment variables. The internet-facing container holds no store credential.
   the metric allowlists.
 - Compose literals (environment-fixed, not secret):
   - `OTEL_EXPORTER_OTLP_ENDPOINT: http://monitor-alloy:4317`
-  - `CLIENT_RESOURCE_ATTRIBUTES: deployment.environment=<env>`
-  - `OTEL_RESOURCE_ATTRIBUTES: deployment.environment=<env>,log_source=otlp` — the
-    homelab's Loki contract for OTLP-pushed logs, so the collector's own logs index
-    as a stream.
+  - `CLIENT_RESOURCE_ATTRIBUTES: deployment.environment.name=<env>,telemetry_source=client`
+  - `OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=<env>,telemetry_source=otlp` —
+    the homelab's path label, one key on every signal: `docker` and `file` where
+    Alloy scrapes, `otlp` on a server's own push, `client` on what this collector
+    forwards. The collector's own logs are a server push.
   - `LOG_OUTPUT: otlp` — Alloy already ships every container's stdout to Loki, and
     `both` would store each line twice.
 - The embedded certificate is used as-is: Traefik re-encrypts to the container and
@@ -75,8 +76,9 @@ scrape), the hardening block (`user: 65534`, `cap_drop: ALL`, `read_only`,
 it also outputs **logs** to Loki's OTLP endpoint (`otelcol.exporter.otlphttp "loki"`)
 and **metrics** to the existing Prometheus remote-write
 (`otelcol.exporter.prometheus`). That change lives in the homelab's monitoring
-configuration, with `OBSERVABILITY.md` there recording the contract: OTLP-pushed logs
-set `log_source=otlp`; build identity stays out of metric labels.
+configuration, with `OBSERVABILITY.md` there recording the contract: every stream
+carries `telemetry_source`, which OTLP pushes set themselves; build identity stays
+out of metric labels.
 
 ## Stopping it
 

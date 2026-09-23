@@ -25,21 +25,25 @@ configuration store or hosting. One image; environment variables; TLS on by defa
 | Signals | Traces, logs **and metrics**; metrics on a separate pipeline that never carries identity |
 | Downstream | Any OTLP endpoint, gRPC or HTTP, TLS optional, configured with the standard `OTEL_EXPORTER_OTLP_*` variables |
 | Listener | **One** TLS port serving OTLP/gRPC and OTLP/HTTP; a self-signed certificate is embedded so the image runs with nothing mounted |
-| Authentication | OIDC only: a JWT access token as a bearer or, optionally, in a cookie. No anonymous access, no API keys, no shared secrets |
+| Authentication | OIDC only: a JWT access token as a bearer. No cookies, no anonymous access, no API keys, no shared secrets |
 | Publishing | Multi-arch image on `ghcr.io/vcheesbrough/otlp-collector-oidc` |
 | Licence | PolyForm Noncommercial 1.0.0 (see `LICENSE`, `LICENSE-TIER.md`) |
 
-Two facts verified against collector source shape the contract: an authenticator
-refusal is always **401** with the error text as the body (`config/confighttp/server.go`,
-`authInterceptor`) — 403 is not reachable; and `max_request_body_size` bounds the
-**decompressed** body.
+Two facts verified against collector source shape the contract. First, the
+authenticator never chooses a status: `authInterceptor` (`config/confighttp/server.go`)
+hands every `Authenticate` error to the receiver's error handler
+(`confighttp.WithErrorHandler`) as **401** with the error text, or writes exactly that
+itself when no handler is installed. The status is therefore the receiver's, and this
+receiver keeps **401** for every refusal of a token — 403 is deliberately never used —
+and overrides it for one error only, not-ready → **503** (§3.3). Second,
+`max_request_body_size` bounds the **decompressed** body.
 
 ## 3. Architecture
 
 ```
 any client ──► [ consumer's proxy, or TLS here ] ──► otlp-collector-oidc ──► any OTLP endpoint
- bearer /                                            ├ oidcclientauth   the authenticator extension
- cookie-JWT                                          ├ otlpsingleport   ONE TLS port: gRPC + HTTP /v1/{traces,logs,metrics}
+ bearer JWT                                          ├ oidcclientauth   the authenticator extension
+                                                     ├ otlpsingleport   ONE TLS port: gRPC + HTTP /v1/{traces,logs,metrics}
                                                      ├ traces/logs:  memory_limiter · attributes(identity) · transform · filter · batch
                                                      ├ metrics:      memory_limiter · attributes(static only) · transform · filter · deltatocumulative · batch
                                                      ├ otlp exporter  (gRPC or HTTP, TLS or plaintext, queue + retry)
@@ -86,6 +90,12 @@ on `:8888`.
 For the same reason the authenticator does not crash-loop on OIDC discovery failure:
 it starts, retries discovery in the background, answers **503** (retryable, so clients
 back off rather than stop) until the JWKS is loaded, and counts it as `not_ready`.
+The 503 is the receiver's doing, not the extension's: `Authenticate` returns a
+distinguished not-ready error, the interceptor passes it to the receiver's error
+handler as it does every other authenticator error, and that handler alone answers
+503 with a `Retry-After` for this one error and writes every other status it is given
+unchanged (§4.1). Over gRPC the same plain-text answers reach the client as
+`Unavailable` and `Unauthenticated` (§10).
 
 ### 3.4 The product's own logs go upstream, as OTLP
 
@@ -124,6 +134,13 @@ Built only on public collector and `pdata` APIs; not a fork of the stock receive
   The gRPC services are `p*otlp.RegisterGRPCServer` with three small `Export`
   handlers. Consumer errors map as the stock receiver's do: permanent → `400` /
   `InvalidArgument`, otherwise `503` / `Unavailable` with a retry hint.
+- **The error handler is where any status other than 401 for an authenticator error
+  comes from.** `confighttp.WithErrorHandler` is consulted by the auth interceptor
+  and the decompressor alike; this receiver's handler answers `503` with `Retry-After`
+  for the extension's not-ready error and writes every other status it is handed
+  unchanged — `401` for any other authenticator error, the decompressor's own for a
+  bad or oversized body. The handler sees only the error text, so the not-ready error
+  is a fixed string the extension and the receiver share as a constant.
 - **Own telemetry:** the standard `receiver_accepted_*` / `receiver_refused_*` via
   `receiverhelper`, so dashboards built for stock receivers read this one unchanged.
 
@@ -138,15 +155,16 @@ the stock receiver replaces it with no configuration change.
 
 Implements `extensionauth.Server`.
 
-- **Token source:** `Authorization: Bearer …`, else — when `cookie_name` is set — a
-  JWT carried in a cookie of that name. The cookie path exists for browsers: an app
-  that keeps the access token in an `HttpOnly` cookie never exposes it to JavaScript,
-  and the unload flush via `navigator.sendBeacon` cannot carry a header at all. The
-  CSRF position: the app sets `SameSite=Lax` or stricter, and the receiver rejects
-  every content type but OTLP's two with 415, so a cross-origin page can send nothing
-  the collector would accept without a preflight that CORS-off refuses.
+- **Token source:** `Authorization: Bearer …`, and nothing else. There is no cookie
+  form, so the receiver is never a target for an ambient credential: no CSRF position
+  to hold, no `SameSite` requirement on the app, and the 415 on non-OTLP content types
+  is a plain dispatch rule rather than a defence. A browser client therefore holds an
+  access token it can put in a header, and flushes on unload with
+  `fetch(…, { keepalive: true })`, which carries headers where `navigator.sendBeacon`
+  cannot.
 - **Validation** with `github.com/coreos/go-oidc/v3`: discovery at startup with
-  background retry on failure (503 `not_ready` meanwhile, never a crash); JWKS cache
+  background retry on failure (the not-ready error meanwhile, which the receiver
+  answers as 503 — §3.3 — never a crash); JWKS cache
   with rotation; `aud` must contain `audience`; RS256/384/512 and ES256/384/512;
   required `exp` / `iss` / `aud`. Then `scope` (or an array `scp`) must contain
   `required_scope`.
@@ -160,7 +178,8 @@ Implements `extensionauth.Server`.
   set (`no_token`, `invalid_token`, `missing_scope`, `missing_claim`, `not_ready`);
   one rate-limited warning per reason.
 
-**`resource_attributes` is optional; `deployment.environment` is its usual content.**
+**`resource_attributes` is optional; `deployment.environment.name` and the estate's
+path marker (`telemetry_source=client`) are its usual content.**
 Every key given is **overwritten** on every signal — `attributes` upserts it from
 `auth.<key>` onto the span/log/datapoint, `transform` copies it to
 `resource.attributes` and deletes the temporary copy — so a dev client cannot label
@@ -174,20 +193,26 @@ client, like every other resource attribute. Two are deliberately never in this 
 All stock components, rendered from an embedded template at startup (§6).
 
 - **Traces and logs.** `attributes` upserts identity from `from_context: auth.<key>`;
-  `transform` lifts the static resource attributes onto `resource.attributes`, sets
-  `telemetry.source=client` (logs also `log_source=otlp`) and clamps far-future
-  timestamps; `filter` drops `service.name` outside `ALLOWED_SERVICE_NAMES` and
-  far-past spans. No attribute count or length caps: the decompressed body cap and the
-  edge rate limit bound cost, and span/log attributes are not labels, so they cannot
-  cost cardinality.
+  `transform` lifts the static resource attributes onto `resource.attributes` and
+  clamps far-future timestamps; `filter` drops
+  `service.name` outside `ALLOWED_SERVICE_NAMES` and far-past spans. The collector
+  stamps no fixed marker of its own: the client-origin attribute is one of the
+  deployer's `resource_attributes` keys. No attribute count or length caps: the
+  decompressed body cap and the edge rate limit bound cost, and span/log attributes
+  are not labels, so they cannot cost cardinality. **What `filter` drops is not
+  reported to the client.** The receiver has answered `200` by the time a later
+  processor drops an item, so OTLP's partial-success response — which the
+  `observability` skill's client reference asks for — cannot be produced here. This
+  is the recorded deviation: the drops are visible in the filter processor's own
+  metrics on `:8888`, and the allowed set is published to client authors up front.
 - **Metrics — a separate, stricter chain.** No identity action at all, so `user.*` and
   `session.id` cannot reach a datapoint by construction. `keep_keys` allowlists
   datapoint attribute keys (`ALLOWED_METRIC_ATTRIBUTE_KEYS`); `filter` allowlists
   metric names (`ALLOWED_METRIC_NAMES`); `deltatocumulative` has a hard `max_streams`
   so a client inventing series exhausts a counter, not the container; the resource is
-  reduced to `service.name` / `service.version` / `deployment.environment` /
-  `telemetry.source`. Rejections are counted, so a client build that ships an
-  unregistered metric is visible.
+  reduced to `service.name` / `service.version` and the keys of `resource_attributes`.
+  Rejections are counted, so a client build that ships an unregistered metric is
+  visible.
 - `memory_limiter` first in every pipeline; identity is materialised from context
   **before** `batch`, so no `metadata_keys` on the batcher; `otlp` exporter with
   `sending_queue` and `retry_on_failure`.
@@ -221,8 +246,7 @@ without it, naming the variable.
 | `REQUIRED_SCOPE` | `telemetry:write` | Must appear in `scope` (or `scp`) |
 | `REQUIRED_CLAIMS` | `sub,preferred_username` | Each must be present and non-empty |
 | `CLAIM_ATTRIBUTES` | `sub=user.id,preferred_username=user.name,email=user.email,name=user.full_name` | Claim → span/log attribute; absent optional claims are skipped |
-| `CLIENT_RESOURCE_ATTRIBUTES` | *(empty = client's values kept)* | `key=value,…` stamped onto every **client** resource, overwriting the client's; `deployment.environment` recommended. Not `OTEL_RESOURCE_ATTRIBUTES`, which describes the collector itself |
-| `COOKIE_NAME` | *(empty = off)* | Also accept the JWT from a cookie of this name |
+| `CLIENT_RESOURCE_ATTRIBUTES` | *(empty = client's values kept)* | `key=value,…` stamped onto every **client** resource, overwriting the client's; `deployment.environment.name` and the estate's path marker (`telemetry_source=client`) recommended. Not `OTEL_RESOURCE_ATTRIBUTES`, which describes the collector itself |
 | `CLOCK_SKEW` | `60s` | Tolerance on `exp` / `nbf` |
 | `REJECTION_LOG_INTERVAL` | `60s` | At most one warning per reason per interval |
 
@@ -230,7 +254,7 @@ without it, naming the variable.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `LISTEN_ADDR` | `0.0.0.0:4318` | The one listener: TLS; OTLP/gRPC and OTLP/HTTP on the same port, told apart per request (h2 + `application/grpc` → gRPC; `/v1/…` → HTTP). Same authenticator on both; the cookie form is HTTP-only by nature |
+| `LISTEN_ADDR` | `0.0.0.0:4318` | The one listener: TLS; OTLP/gRPC and OTLP/HTTP on the same port, told apart per request (h2 + `application/grpc` → gRPC; `/v1/…` → HTTP). Same authenticator on both |
 | `TLS_CERT_FILE` | `/etc/otlp-collector-oidc/tls/cert.pem` | Embedded self-signed pair unless overridden |
 | `TLS_KEY_FILE` | `/etc/otlp-collector-oidc/tls/key.pem` | |
 | `MAX_REQUEST_BODY_BYTES` | `4194304` | Cap on the **decompressed** body → 413 |
@@ -317,8 +341,8 @@ misconfigured provider diagnoses itself with one `curl`.
 
 - **What:** a JWS compact-serialised **access token** (RFC 9068 shape). An ID token is
   not accepted (it carries no `scope`); an opaque access token is not accepted.
-- **Delivery:** `Authorization: Bearer <jwt>`, or — when `cookie_name` is set — a
-  cookie of that name whose value is the JWT itself.
+- **Delivery:** `Authorization: Bearer <jwt>`. Nothing else is read: a token in a
+  cookie or a query parameter is `no token`.
 - **Header:** `alg` ∈ {RS256, RS384, RS512, ES256, ES384, ES512}; `kid` must match a
   key in the JWKS published via discovery. `none`, HS*, and an unknown `kid` (after one
   JWKS refresh) are rejected.
@@ -330,9 +354,11 @@ misconfigured provider diagnoses itself with one `curl`.
 - **Identity, required:** `sub` and `preferred_username`, non-empty → `user.id`,
   `user.name`. **Optional:** `email` → `user.email`, `name` → `user.full_name`. Any
   other claim is ignored.
-- **Failure catalogue** (all 401; the body text is the contract): `no token` ·
-  `invalid token: <reason>` · `missing scope: telemetry:write` ·
-  `missing claim: preferred_username` · `not ready`.
+- **Failure catalogue** (the body text is the contract). Every refusal of a token is
+  **401**: `no token` · `invalid token: <reason>` · `missing scope: telemetry:write` ·
+  `missing claim: preferred_username`. One answer is not a refusal and is **503** with
+  `Retry-After`: `not ready`, while the JWKS has not yet loaded (§3.3) — the only
+  status a client should back off and retry rather than fix.
 
 ## 8. Provider and proxy guides
 
@@ -353,27 +379,30 @@ and one for `/opentelemetry.proto.collector` (never stripped); rate limiting on 
 
 ## 9. Acceptance tests
 
-- **Extension unit:** bearer and cookie paths; each required claim missing → the named
+- **Extension unit:** the bearer path, and a token presented any other way (cookie,
+  query parameter) → `no token`; each required claim missing → the named
   message; optional claims absent → no attribute; `claim_attributes` and
   `resource_attributes` land in the auth context (an empty map means no resource
   action); counter labels bounded; warnings rate-limited.
 - **Receiver unit:** dispatch (h2 + `application/grpc` → gRPC; `/v1/*` + protobuf/JSON
   → HTTP; other paths 404, methods 405, content types 415); every signal in every
   encoding, gzip and plain; permanent vs retryable consumer errors → `400` / `503`
-  and `InvalidArgument` / `Unavailable`; the auth context is visible inside a gRPC
-  handler; `receiver_accepted_*` / `refused_*` counted.
+  and `InvalidArgument` / `Unavailable`; the error handler: the not-ready error →
+  `503` with `Retry-After`, every other authenticator error → `401` with its text, a
+  decompressor status passed through unchanged; the auth context is visible inside a
+  gRPC handler; `receiver_accepted_*` / `refused_*` counted.
 - **Renderer:** golden files per environment shape, each `OTEL_EXPORTER_OTLP_*`
   translation, every golden file loaded by the collector's own validation.
 - **Integration** (the built binary as a subprocess, an httptest OIDC issuer,
   in-process gRPC sinks, **HTTPS** with a test certificate, every core scenario over
   both HTTP and gRPC on the same port, and a check that only one port is open):
-  OTLP/JSON and gzipped protobuf with bearer and with cookie arrive carrying `user.id`,
-  `user.name`, the static resource attributes, `telemetry.source=client`,
-  `log_source=otlp`; forged identity and resource values overwritten; `service.name`
+  OTLP/JSON and gzipped protobuf with a bearer arrive carrying `user.id`,
+  `user.name`, the static resource attributes; forged identity and resource values
+  overwritten; `service.name`
   outside `ALLOWED_SERVICE_NAMES` dropped, `.*` admits any; far-future start clamped;
   no/invalid token, missing scope, missing claim → 401 with the named body and
   nothing at the sink; a 5 MiB gzip bomb → 413; a `text/plain` body with a valid
-  cookie → 415 (the CSRF position, pinned); sink down → client status unchanged and
+  bearer → 415; sink down → client status unchanged and
   the container stays healthy; issuer unreachable at start → process runs, health
   passes, 503 `not_ready`, recovery without restart. Metrics: an allowlisted metric
   arrives with no `user.*` / `session.*` even when sent; unknown name dropped;
@@ -392,8 +421,9 @@ and one for `/opentelemetry.proto.collector` (never stripped); rate limiting on 
 ## 10. Open questions — verify while building, do not assume
 
 - `grpc.Server.ServeHTTP` is marked experimental in grpc-go: confirm on the pinned
-  version that unary `Export` calls, `grpc-encoding: gzip` and `Unauthenticated`
-  propagation behave, and that `confighttp`'s decompressor (keyed on
+  version that unary `Export` calls and `grpc-encoding: gzip` behave, that the
+  interceptor's plain-text `401` and `503` reach a gRPC client as `Unauthenticated`
+  and `Unavailable`, and that `confighttp`'s decompressor (keyed on
   `Content-Encoding`) and body-size interceptor leave gRPC frames untouched. Fallback:
   a `cmux` on our own listener in front of a stock-style `grpc.Server` — still one
   port.
