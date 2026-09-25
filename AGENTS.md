@@ -23,7 +23,7 @@ Cross-repo rules change in `agent-shared`, not here.
 | **Kanban board** | `https://bored.desync.link/boards/otlp-collector-oidc` |
 | **Phase** | pre-MVP `0.N.P` — iteration 1 starts at `0.1.0` |
 | **CI** | **GitHub Actions**, not Woodpecker — baseline §4's GitHub-native path applies, but Actions reports **check runs**, not commit statuses: watch `gh pr checks <PR> --watch`, or read `gh api repos/vcheesbrough/otlp-collector-oidc/commits/$SHA/check-runs --jq '.check_runs[] \| [.name, .status, .conclusion]'`. Workflows: `ci.yml` (Lint, Test, Image, Badges on `main`), `release.yml` |
-| **Image** | `ghcr.io/vcheesbrough/otlp-collector-oidc` (multi-arch, published by `release.yml` only after CI passes on the same commit: `v*` tags → exact version, `main` → `:edge`) |
+| **Image** | `ghcr.io/vcheesbrough/otlp-collector-oidc` (multi-arch, published by `release.yml` only after CI passes on the same commit: `main` → `:edge`, an iteration merge also → `:0.N.0` with its tag created automatically, a pushed `v*` tag → that version) |
 | **Language** | Go — a custom OpenTelemetry Collector distribution built with `ocb` |
 
 Shared skills apply here once the machine is wired up (`start-iteration`,
@@ -61,6 +61,17 @@ Baseline §2 unchanged: the workspace version is the Go module's release tag
 `observability` skill's §1 applied to this product itself: it exports its own logs
 over OTLP and its own metrics on `:8888`, ships a dashboard for them, and is never
 in a health gate.
+
+**Releases are cut by the merge.** When an iteration's PR — branch
+`feat/iteration-N-<slug>`, as `start-iteration` names it — merges and CI passes on
+`main`, `release.yml` tags the merge commit `vM.N.0` (M the current major) and
+publishes `:M.N.0` beside `:edge`. Nobody tags an iteration by hand, and the branch
+name is what marks the merge as a release, so it must follow the convention. Other
+merges (fixes, Dependabot, `ci/…` branches) publish `:edge` only. A patch release is
+a hand-pushed `vX.Y.P` tag; CI runs on it and `release.yml` publishes it. The MVP is
+the one hand-cut tag: after the MVP card's merge has been released as `v0.N.0`, push
+`v1.0.0` on the same commit. The rules are `scripts/release-plan.sh`, tested by
+`make release-plan-test`.
 
 ### Integration tests are the primary tier
 
@@ -162,7 +173,8 @@ baseline everyone assumes. CI enforces what a tool can; review enforces the rest
   tag (`v0.N.P`); `scripts/version.sh` derives it and the Makefile, Dockerfile and
   workflows link it into `internal/build`. A tagged commit reports `0.N.P`; any other
   commit reports the next minor, `0.(N+1).0-dev+<sha>` (before the first tag,
-  `0.1.0-dev+<sha>`), and the `:edge` image carries that. `:latest` is published only
+  `0.1.0-dev+<sha>`), and the `:edge` image carries that. Iteration tags are created
+  by the release workflow on merge (see "Versioning"). `:latest` is published only
   from `v1.0.0` onwards; before that, only `:edge` and exact version tags exist.
 - **Testing.** `testify` `require`/`assert`; table-driven with named struct fields;
   `t.Helper()` in helpers; `t.Parallel()` where the subprocess allows; no sleeps,

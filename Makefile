@@ -12,7 +12,7 @@ BIN     := bin/otlp-collector-oidc
 # Unit packages: everything but the integration tier.
 UNIT    := $(shell $(GO) list ./... | grep -v /integration)
 
-.PHONY: all fmt lint vet vuln test integration build image generate generate-check versions-check docs-check check
+.PHONY: all fmt lint vet vuln test integration build image generate generate-check versions-check docs-check release-plan-test check
 
 all: check build
 
@@ -64,4 +64,8 @@ versions-check:
 docs-check:
 	scripts/docs-check.sh
 
-check: lint vet test generate-check versions-check docs-check
+## release-plan-test: the rules that decide what a release publishes.
+release-plan-test:
+	scripts/release-plan_test.sh
+
+check: lint vet test generate-check versions-check docs-check release-plan-test

@@ -19,7 +19,9 @@ if [ -z "$dirty" ] && tag=$(git describe --tags --exact-match --match "$pattern"
 	exit 0
 fi
 
-last=$(git describe --tags --abbrev=0 --match "$pattern" HEAD 2>/dev/null || echo v0.0.0)
+# The highest release reachable, not the nearest: tags can share a commit.
+last=$(git tag --merged HEAD --list "$pattern" | sort -V | tail -n 1)
+last=${last:-v0.0.0}
 last=${last#v}
 major=${last%%.*}
 rest=${last#*.}

@@ -56,6 +56,9 @@ jobs:
       - name: No key material in the repository
         if: ${{ !cancelled() }}
         run: scripts/no-key-material.sh
+      - name: Release planning (scripts/release-plan.sh)
+        if: ${{ !cancelled() }}
+        run: scripts/release-plan_test.sh
 
   test:
     name: Test
