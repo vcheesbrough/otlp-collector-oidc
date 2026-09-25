@@ -35,7 +35,8 @@ answer=$(curl -sk -w '\n%{http_code}' https://localhost:4318/v1/traces \
 	-H 'Content-Type: application/json' \
 	-d '{"resourceSpans":[{"scopeSpans":[{"spans":[{"traceId":"5b8efff798038103d269b633813fc60c","spanId":"eee19b7ec3c1b174","name":"smoke","startTimeUnixNano":"1","endTimeUnixNano":"2"}]}]}]}')
 code=$(printf '%s\n' "$answer" | tail -n 1)
-body=$(printf '%s\n' "$answer" | sed '$d')
+# protojson randomly spaces its separators, so drop the optional space after ',' and ':'.
+body=$(printf '%s\n' "$answer" | sed '$d' | sed -E 's/([,:]) /\1/g')
 [ "$code" = 401 ] || { docker logs "$cid" >&2; fail "export without a token answered $code, want 401"; }
 [ "$body" = '{"code":16,"message":"no token"}' ] || fail "401 body is '$body', want the 'no token' status"
 
