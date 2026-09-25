@@ -6,7 +6,7 @@ toolchain go1.27.1
 
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.161.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
