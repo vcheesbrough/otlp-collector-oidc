@@ -9,6 +9,10 @@ updates:
     ignore:
       - dependency-name: go.opentelemetry.io/collector*
       - dependency-name: github.com/open-telemetry/opentelemetry-collector-contrib*
+      # 1.84.0 reintroduces GO-2026-6443, fixed in the 1.83.2 we pin; take
+      # the next fixed release instead.
+      - dependency-name: google.golang.org/grpc
+        versions: ["1.84.0"]
     groups:
       gomod:
         patterns: ["*"]
