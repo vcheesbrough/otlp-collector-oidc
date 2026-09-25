@@ -1,0 +1,75 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+formatters:
+  enable:
+    - gofumpt
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/vcheesbrough/otlp-collector-oidc)
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - contextcheck
+    - copyloopvar
+    - errorlint
+    - exhaustive
+    - forbidigo
+    - gocritic
+    - gosec
+    - misspell
+    - noctx
+    - nolintlint
+    - perfsprint
+    - revive
+    - testifylint
+    - thelper
+    - unparam
+    - usestdlibvars
+  settings:
+    forbidigo:
+      # Product code logs through the component's *zap.Logger only, so every
+      # line goes through the one path that is exported upstream.
+      forbid:
+        - pattern: ^fmt\.Print.*$
+          msg: log through the component's *zap.Logger
+        - pattern: ^print(ln)?$
+          msg: log through the component's *zap.Logger
+        - pattern: ^log\..*$
+          msg: log through the component's *zap.Logger
+        - pattern: ^os\.Exit$
+          msg: return an error; only main exits
+      analyze-types: true
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: var-naming
+        - name: error-strings
+        - name: error-naming
+        - name: receiver-naming
+        - name: context-as-argument
+        - name: unused-parameter
+    exhaustive:
+      default-signifies-exhaustive: false
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
+    rules:
+      # main may print and exit; tests may exit from TestMain.
+      - path: ^cmd/
+        linters: [forbidigo]
+      - path: _test\.go$
+        linters: [forbidigo]

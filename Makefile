@@ -1,0 +1,67 @@
+GO            ?= go
+GOLANGCI_LINT ?= golangci-lint
+GOVULNCHECK   ?= $(GO) run golang.org/x/vuln/cmd/govulncheck@v1.8.0
+GOTESTSUM     ?= $(GO) run gotest.tools/gotestsum@v1.13.0
+IMAGE         ?= ghcr.io/vcheesbrough/otlp-collector-oidc
+VERSION       ?= $(shell scripts/version.sh)
+REVISION      ?= $(shell git rev-parse HEAD)
+
+MODULE  := github.com/vcheesbrough/otlp-collector-oidc
+LDFLAGS := -s -w -X $(MODULE)/internal/build.version=$(VERSION)
+BIN     := bin/otlp-collector-oidc
+# Unit packages: everything but the integration tier.
+UNIT    := $(shell $(GO) list ./... | grep -v /integration)
+
+.PHONY: all fmt lint vet vuln test integration build image generate generate-check versions-check docs-check check
+
+all: check build
+
+## fmt: rewrite sources with gofumpt and gci.
+fmt:
+	$(GOLANGCI_LINT) fmt
+
+## lint: fail on any formatting diff or linter finding.
+lint:
+	$(GOLANGCI_LINT) fmt --diff
+	$(GOLANGCI_LINT) run
+
+vet:
+	$(GO) vet ./...
+
+vuln:
+	$(GOVULNCHECK) ./...
+
+## test: unit tests only; the integration tier is `make integration`.
+test:
+	$(GO) test $(UNIT)
+
+## integration: build the collector with coverage and drive it from outside.
+integration:
+	$(GO) test -count=1 -timeout 5m ./integration
+
+build:
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/otlp-collector-oidc
+
+image:
+	docker build --build-arg VERSION=$(VERSION) --build-arg REVISION=$(REVISION) -t $(IMAGE):dev .
+
+## generate: mdatagen for every component, ocb for the distribution's components.go.
+generate:
+	cd receiver/otlpsingleport && $(GO) tool mdatagen metadata.yaml
+	$(GO) tool builder --config builder.yaml --skip-compilation --skip-get-modules
+	cp _build/components.go cmd/otlp-collector-oidc/components.go
+
+## generate-check: fail if generated code differs from what is committed.
+generate-check: generate
+	@git diff --exit-code -- receiver cmd || (echo "generated code is stale: run make generate" >&2; exit 1)
+	@test -z "$$(git status --porcelain -- receiver cmd)" || (git status --porcelain -- receiver cmd >&2; echo "generated files are not committed" >&2; exit 1)
+
+## versions-check: builder.yaml and go.mod pin the same collector release.
+versions-check:
+	scripts/versions-check.sh
+
+## docs-check: every variable the shipped config reads is documented, and nothing else is.
+docs-check:
+	scripts/docs-check.sh
+
+check: lint vet test generate-check versions-check docs-check

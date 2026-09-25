@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # The collector release line is bumped by hand, all together, in one PR
+  # (AGENTS.md "Versions move together"); Dependabot proposes the rest.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: go.opentelemetry.io/collector*
+      - dependency-name: github.com/open-telemetry/opentelemetry-collector-contrib*
+    groups:
+      gomod:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
