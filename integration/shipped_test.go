@@ -56,6 +56,7 @@ func TestShipped(t *testing.T) {
 		t.Run("bodies", bodyScenarios(env))
 	})
 	t.Run("counters", acceptedCounters(env))
+	t.Run("refusals", refusalCounters(env))
 	t.Run("one listener", oneListener(env))
 	t.Run("version", versionAgrees(env))
 	t.Run("upstream down", upstreamDown(env))

@@ -16,6 +16,8 @@ import (
 	"go.opentelemetry.io/collector/receiver/receiverhelper"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+
+	"github.com/vcheesbrough/otlp-collector-oidc/receiver/otlpsingleport/internal/metadata"
 )
 
 // OTLP/HTTP paths, fixed by the OTLP specification.
@@ -34,6 +36,8 @@ type singlePortSettings struct {
 	errorHandler func(w http.ResponseWriter, r *http.Request, msg string, httpStatus int)
 	obsGRPC      *receiverhelper.ObsReport
 	obsHTTP      *receiverhelper.ObsReport
+	refusals     *refusals
+	metrics      *metadata.TelemetryBuilder
 }
 
 // singlePort owns the one listener, the gRPC server inside it and the table
@@ -56,19 +60,19 @@ func newSinglePort(set singlePortSettings) *singlePort {
 func (s *singlePort) registerTraces(next consumer.Traces) {
 	ptraceotlp.RegisterGRPCServer(s.settings.grpcServer, &tracesExporter{next: next, obs: s.settings.obsGRPC})
 	h := &tracesExporter{next: next, obs: s.settings.obsHTTP}
-	s.routes[tracesPath] = exportHandler(ptraceotlp.NewExportRequest, h.Export)
+	s.routes[tracesPath] = exportHandler(s.settings.refusals, ptraceotlp.NewExportRequest, h.Export)
 }
 
 func (s *singlePort) registerLogs(next consumer.Logs) {
 	plogotlp.RegisterGRPCServer(s.settings.grpcServer, &logsExporter{next: next, obs: s.settings.obsGRPC})
 	h := &logsExporter{next: next, obs: s.settings.obsHTTP}
-	s.routes[logsPath] = exportHandler(plogotlp.NewExportRequest, h.Export)
+	s.routes[logsPath] = exportHandler(s.settings.refusals, plogotlp.NewExportRequest, h.Export)
 }
 
 func (s *singlePort) registerMetrics(next consumer.Metrics) {
 	pmetricotlp.RegisterGRPCServer(s.settings.grpcServer, &metricsExporter{next: next, obs: s.settings.obsGRPC})
 	h := &metricsExporter{next: next, obs: s.settings.obsHTTP}
-	s.routes[metricsPath] = exportHandler(pmetricotlp.NewExportRequest, h.Export)
+	s.routes[metricsPath] = exportHandler(s.settings.refusals, pmetricotlp.NewExportRequest, h.Export)
 }
 
 // ServeHTTP dispatches one request: gRPC to the gRPC server, a registered
@@ -84,6 +88,7 @@ func (s *singlePort) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.ServeHTTP(w, r)
 		return
 	}
+	s.settings.refusals.count(r.Context(), transportHTTP, refusalUnknownPath)
 	http.NotFound(w, r)
 }
 
@@ -119,5 +124,6 @@ func (s *singlePort) Shutdown(ctx context.Context) error {
 	}
 	s.settings.grpcServer.Stop()
 	s.serveWG.Wait()
+	s.settings.metrics.Shutdown()
 	return err
 }

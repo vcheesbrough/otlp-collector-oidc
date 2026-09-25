@@ -141,8 +141,10 @@ Built only on public collector and `pdata` APIs; not a fork of the stock receive
   so in it the client sees only the receiver's own answers; an upstream's answer
   reaches the client only in a pipeline with neither.
 - **One cap, both protocols.** `max_request_body_size` bounds the decompressed body
-  (`413` over HTTP — the stock receiver answers `400`) and is also the gRPC server's
-  `MaxRecvMsgSize` (`ResourceExhausted`).
+  (`413` over HTTP — the stock receiver answers `400`). Over gRPC, confighttp's cap
+  also counts the 5-byte frame header of the raw stream, so the gRPC server's
+  `MaxRecvMsgSize` is the cap less 5: a gRPC message may be 5 bytes smaller than an
+  HTTP body, and every oversized one is `ResourceExhausted`.
 - **One listener, shared.** Every pipeline naming the receiver's configuration gets
   the same instance; a signal with no pipeline has no route, so it answers `404` over
   HTTP and `Unimplemented` over gRPC.
@@ -154,7 +156,12 @@ Built only on public collector and `pdata` APIs; not a fork of the stock receive
   bad or oversized body. The handler sees only the error text, so the not-ready error
   is a fixed string the extension and the receiver share as a constant.
 - **Own telemetry:** the standard `receiver_accepted_*` / `receiver_refused_*` via
-  `receiverhelper`, so dashboards built for stock receivers read this one unchanged.
+  `receiverhelper`, so dashboards built for stock receivers read this one unchanged,
+  and `otlpsingleport_requests_refused{transport, reason}` for every request refused
+  before the pipeline — which the stock receiver does not count. `reason` is a closed
+  set: `method`, `media_type`, `body_too_large`, `decode`, `unknown_path`,
+  `decompress`. Over gRPC, an RPC counts only if it failed before its handler ran; a
+  failure the pipeline returns is `receiver_refused_*`.
 
 **Why the receiver is ours.** The stock OTLP receiver builds a `*grpc.Server` and an
 `*http.Server` and calls `net.Listen` twice (`otlpreceiver/otlp.go:117,172`), so it
@@ -443,9 +450,11 @@ suite, so a version bump re-proves them):
   not needed. The server's `otelhttp` wrapper keeps the `http.Flusher` gRPC requires.
 - `confighttp`'s decompressor keys on `Content-Encoding` alone, which gRPC never sets,
   so gRPC frames pass through it untouched. Its body-size interceptor does wrap the
-  gRPC request stream, bounding the raw bytes; the decompressed message is bounded by
-  the gRPC server's `MaxRecvMsgSize`, set to the same cap, so a 5 MiB message is
-  `ResourceExhausted` compressed or not.
+  gRPC request stream, bounding the raw bytes, frame header included; the gRPC
+  server's `MaxRecvMsgSize` is therefore the cap less 5, so a message one byte over
+  is `ResourceExhausted` compressed or not, rather than a stream read error.
+- grpc-go calls no stats handler for an RPC to an unregistered service, so the
+  receiver's unknown-service handler answers `Unimplemented` and counts it itself.
 - HTTP/1.1 with `Content-Type: application/grpc` is not gRPC: it is dispatched as
   OTLP/HTTP and answers `404` on a gRPC path.
 

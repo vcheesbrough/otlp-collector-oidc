@@ -59,7 +59,60 @@ type Collector struct {
 // and stops it with SIGTERM when the test ends, asserting a clean exit.
 func Start(t *testing.T, b Binary, opts Options) *Collector {
 	t.Helper()
+	c := launch(t, b, opts)
+	t.Cleanup(func() { c.stop(t) })
 
+	require.Eventually(t, func() bool {
+		select {
+		case <-c.exited:
+			return true
+		default:
+		}
+		return c.healthy(t.Context())
+	}, startTimeout, 25*time.Millisecond, "collector never became healthy")
+	select {
+	case <-c.exited:
+		require.FailNow(t, "collector exited during start", "exit code %d\n%s", c.exitCode, c.Output())
+	default:
+	}
+	return c
+}
+
+// Refused is a collector that would not start: its exit code and output.
+type Refused struct {
+	ExitCode int
+	Output   string
+}
+
+// RunToExit runs the binary with opts for a shape that must refuse to start,
+// and returns once it exits. It fails the test if the process becomes healthy
+// or outlives startTimeout.
+func RunToExit(t *testing.T, b Binary, opts Options) Refused {
+	t.Helper()
+	c := launch(t, b, opts)
+	deadline := time.After(startTimeout)
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-c.exited:
+			return Refused{ExitCode: c.exitCode, Output: c.Output()}
+		case <-deadline:
+			_ = c.cmd.Process.Kill()
+			<-c.exited
+			require.FailNow(t, "collector did not exit", "%s", c.Output())
+		case <-tick.C:
+			if c.healthy(t.Context()) {
+				c.stop(t)
+				require.FailNow(t, "collector started, want a refusal", "%s", c.Output())
+			}
+		}
+	}
+}
+
+// launch starts the process for opts without waiting for anything.
+func launch(t *testing.T, b Binary, opts Options) *Collector {
+	t.Helper()
 	c := &Collector{
 		ListenAddr:  freeAddr(t),
 		HealthAddr:  freeAddr(t),
@@ -102,21 +155,6 @@ func Start(t *testing.T, b Binary, opts Options) *Collector {
 		err := c.cmd.Wait()
 		c.exitCode = exitCode(err)
 	}()
-	t.Cleanup(func() { c.stop(t) })
-
-	require.Eventually(t, func() bool {
-		select {
-		case <-c.exited:
-			return true
-		default:
-		}
-		return c.healthy(t.Context())
-	}, startTimeout, 25*time.Millisecond, "collector never became healthy")
-	select {
-	case <-c.exited:
-		require.FailNow(t, "collector exited during start", "exit code %d\n%s", c.exitCode, c.Output())
-	default:
-	}
 	return c
 }
 

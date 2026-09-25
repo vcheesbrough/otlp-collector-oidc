@@ -26,6 +26,8 @@ hosting. One image, configured with environment variables, TLS on by default.
 
 ## Quick start
 
+> **Authentication is not implemented yet: do not expose this to untrusted clients.**
+
 ```sh
 docker run --rm -p 4318:4318 \
   -e OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4317 \
@@ -50,7 +52,7 @@ same port.
 | `LISTEN_ADDR` | `0.0.0.0:4318` | The one listener: TLS, OTLP/gRPC and OTLP/HTTP on the same port |
 | `TLS_CERT_FILE` | `/etc/otlp-collector-oidc/tls/cert.pem` | Server certificate; the embedded self-signed one unless overridden |
 | `TLS_KEY_FILE` | `/etc/otlp-collector-oidc/tls/key.pem` | Its private key |
-| `MAX_REQUEST_BODY_BYTES` | `4194304` | Cap on the decompressed request, both protocols → `413` / `ResourceExhausted` |
+| `MAX_REQUEST_BODY_BYTES` | `4194304` | Cap on the decompressed request → `413`; a gRPC message may be 5 bytes less (its frame header) → `ResourceExhausted` |
 | `MEMORY_LIMIT_MIB` | `64` | `memory_limiter` hard limit |
 | `MEMORY_SPIKE_LIMIT_MIB` | `16` | `memory_limiter` spike limit |
 | `BATCH_TIMEOUT` | `5s` | Longest a record waits in the batcher |
@@ -80,7 +82,10 @@ runtime user (uid 10001) must be able to read a mounted pair.
   outage does not restart the container and discard the queue that exists to ride it
   out.
 - **Metrics:** Prometheus on `:8888/metrics` — `otelcol_receiver_accepted_*` and
-  `otelcol_receiver_refused_*` per transport (`grpc`, `http`), and
+  `otelcol_receiver_refused_*` per transport (`grpc`, `http`);
+  `otelcol_otlpsingleport_requests_refused` for requests refused before the
+  pipeline, by `transport` and `reason` (`method`, `media_type`, `body_too_large`,
+  `decode`, `unknown_path`, `decompress`); and
   `otelcol_exporter_send_failed_*` and `otelcol_exporter_queue_size` for upstream health.
 - **Logs:** stdout.
 

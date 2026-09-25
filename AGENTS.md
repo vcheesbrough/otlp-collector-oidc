@@ -23,7 +23,7 @@ Cross-repo rules change in `agent-shared`, not here.
 | **Kanban board** | `https://bored.desync.link/boards/otlp-collector-oidc` |
 | **Phase** | pre-MVP `0.N.P` — iteration 1 starts at `0.1.0` |
 | **CI** | **GitHub Actions**, not Woodpecker — baseline §4's GitHub-native path applies, but Actions reports **check runs**, not commit statuses: watch `gh pr checks <PR> --watch`, or read `gh api repos/vcheesbrough/otlp-collector-oidc/commits/$SHA/check-runs --jq '.check_runs[] \| [.name, .status, .conclusion]'`. Workflows: `ci.yml` (Lint, Test, Image, Badges on `main`), `release.yml` |
-| **Image** | `ghcr.io/vcheesbrough/otlp-collector-oidc` (multi-arch, published by `release.yml` on `v*` tags; `main` → `:edge`) |
+| **Image** | `ghcr.io/vcheesbrough/otlp-collector-oidc` (multi-arch, published by `release.yml` only after CI passes on the same commit: `v*` tags → exact version, `main` → `:edge`) |
 | **Language** | Go — a custom OpenTelemetry Collector distribution built with `ocb` |
 
 Shared skills apply here once the machine is wired up (`start-iteration`,

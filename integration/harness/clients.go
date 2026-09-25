@@ -136,7 +136,9 @@ type Response struct {
 	Status int
 	Proto  string
 	Header http.Header
-	Body   []byte
+	// Trailer carries gRPC's grpc-status when a raw request speaks gRPC.
+	Trailer http.Header
+	Body    []byte
 }
 
 // HTTPClient speaks OTLP/HTTP to the listener over TLS.
@@ -178,7 +180,7 @@ func (c *HTTPClient) Do(ctx context.Context, method, path string, header http.He
 	if err != nil {
 		return Response{}, fmt.Errorf("reading response: %w", err)
 	}
-	return Response{Status: resp.StatusCode, Proto: resp.Proto, Header: resp.Header, Body: b}, nil
+	return Response{Status: resp.StatusCode, Proto: resp.Proto, Header: resp.Header, Trailer: resp.Trailer, Body: b}, nil
 }
 
 // Export posts m to the signal's path in encoding e with compression comp.

@@ -28,16 +28,18 @@ var _ component.Config = (*Config)(nil)
 var ErrNoEndpoint = errors.New("endpoint must be set")
 
 // ErrBodySizeOutOfRange is returned by Validate when max_request_body_size is
-// not a positive number that fits the gRPC message-size limit.
-var ErrBodySizeOutOfRange = errors.New("max_request_body_size must be between 1 and 2147483647")
+// no larger than the 5-byte gRPC frame header, or beyond the gRPC
+// message-size limit.
+var ErrBodySizeOutOfRange = errors.New("max_request_body_size must be between 6 and 2147483647")
 
 // Validate fails fast on a configuration the receiver cannot serve.
 func (c *Config) Validate() error {
 	if c.ServerConfig.NetAddr.Endpoint == "" {
 		return ErrNoEndpoint
 	}
-	// The same cap bounds a gRPC message, whose limit is an int32.
-	if c.ServerConfig.MaxRequestBodySize <= 0 || c.ServerConfig.MaxRequestBodySize > math.MaxInt32 {
+	// The same cap, less the 5-byte frame header, bounds a gRPC message,
+	// whose limit is an int32.
+	if c.ServerConfig.MaxRequestBodySize <= grpcFrameHeader || c.ServerConfig.MaxRequestBodySize > math.MaxInt32 {
 		return ErrBodySizeOutOfRange
 	}
 	return nil

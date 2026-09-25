@@ -85,9 +85,15 @@ func (r *registry) release(cfg *Config) {
 }
 
 // newReceiver wires one receiver: its gRPC server, the error handler the
-// listener uses, and an ObsReport per transport.
+// listener uses, an ObsReport per transport, and the refusal counter.
 func newReceiver(set receiver.Settings, cfg *Config) (*singlePort, error) {
-	obsGRPC, err := receiverhelper.NewObsReport(receiverhelper.ObsReportSettings{
+	tb, err := metadata.NewTelemetryBuilder(set.TelemetrySettings)
+	if err != nil {
+		return nil, err
+	}
+	refused := newRefusals(tb, set.ID.String())
+	var obsGRPC *receiverhelper.ObsReport
+	obsGRPC, err = receiverhelper.NewObsReport(receiverhelper.ObsReportSettings{
 		ReceiverID:             set.ID,
 		Transport:              "grpc",
 		ReceiverCreateSettings: set,
@@ -106,10 +112,12 @@ func newReceiver(set receiver.Settings, cfg *Config) (*singlePort, error) {
 	return newSinglePort(singlePortSettings{
 		server:       cfg.ServerConfig,
 		telemetry:    set.TelemetrySettings,
-		grpcServer:   newGRPCServer(cfg.ServerConfig.MaxRequestBodySize),
-		errorHandler: writeHandedStatus,
+		grpcServer:   newGRPCServer(cfg.ServerConfig.MaxRequestBodySize, refused),
+		errorHandler: newErrorHandler(refused),
 		obsGRPC:      obsGRPC,
 		obsHTTP:      obsHTTP,
+		refusals:     refused,
+		metrics:      tb,
 	}), nil
 }
 

@@ -74,7 +74,22 @@ func statusFromHTTP(msg string, httpStatus int) *status.Status {
 	return status.New(c, msg)
 }
 
-// writeHandedStatus is the listener's error handler. confighttp calls it for
+// newErrorHandler returns the listener's error handler: it counts the
+// refusal and writes the status with writeHandedStatus. Today only the
+// decompressor hands statuses over; the authenticator will too, and must
+// then be told apart here.
+func newErrorHandler(refused *refusals) func(w http.ResponseWriter, r *http.Request, msg string, httpStatus int) {
+	return func(w http.ResponseWriter, r *http.Request, msg string, httpStatus int) {
+		t := transportHTTP
+		if isGRPC(r) {
+			t = transportGRPC
+		}
+		refused.count(r.Context(), t, refusalDecompress)
+		writeHandedStatus(w, r, msg, httpStatus)
+	}
+}
+
+// writeHandedStatus writes the status the listener hands over. confighttp calls the handler for
 // failures before the request reaches the dispatcher — a body the
 // decompressor rejects, and later an authenticator refusal — and it writes
 // the status it is handed unchanged: as an OTLP rpc.Status in the request's

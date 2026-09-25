@@ -60,32 +60,36 @@ func lookupEncoding(contentType string) (encoding, bool) {
 
 // exportHandler serves one signal's OTLP/HTTP endpoint. It is parametrised by
 // the signal's request and response types, so the three signals share one
-// implementation.
-func exportHandler[Req, Resp otlpMessage](newRequest func() Req, export func(context.Context, Req) (Resp, error)) http.HandlerFunc {
+// implementation. Every refusal before the export is counted in refused.
+func exportHandler[Req, Resp otlpMessage](refused *refusals, newRequest func() Req, export func(context.Context, Req) (Resp, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
+			refused.count(r.Context(), transportHTTP, refusalMethod)
 			w.Header().Set("Allow", http.MethodPost)
 			http.Error(w, "405 method not allowed, supported: [POST]", http.StatusMethodNotAllowed)
 			return
 		}
 		enc, ok := lookupEncoding(r.Header.Get("Content-Type"))
 		if !ok {
+			refused.count(r.Context(), transportHTTP, refusalMediaType)
 			http.Error(w, "415 unsupported media type, supported: [application/json, application/x-protobuf]", http.StatusUnsupportedMediaType)
 			return
 		}
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			code := http.StatusBadRequest
+			code, reason := http.StatusBadRequest, refusalDecode
 			if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
-				code = http.StatusRequestEntityTooLarge
+				code, reason = http.StatusRequestEntityTooLarge, refusalBodyTooLarge
 			}
+			refused.count(r.Context(), transportHTTP, reason)
 			writeStatus(w, enc, code, statusFromHTTP(err.Error(), code))
 			return
 		}
 
 		req := newRequest()
 		if err = enc.unmarshal(req, body); err != nil {
+			refused.count(r.Context(), transportHTTP, refusalDecode)
 			writeStatus(w, enc, http.StatusBadRequest, statusFromHTTP(err.Error(), http.StatusBadRequest))
 			return
 		}
