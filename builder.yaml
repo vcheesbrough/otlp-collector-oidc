@@ -20,6 +20,9 @@ exporters:
   - gomod: go.opentelemetry.io/collector/exporter/otlpexporter v0.161.0
 
 extensions:
+  - gomod: github.com/vcheesbrough/otlp-collector-oidc v0.0.0
+    import: github.com/vcheesbrough/otlp-collector-oidc/extension/oidcclientauth
+    path: ./
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.161.0
 
 providers:

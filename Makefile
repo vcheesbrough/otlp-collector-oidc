@@ -48,13 +48,14 @@ image:
 ## generate: mdatagen for every component, ocb for the distribution's components.go.
 generate:
 	cd receiver/otlpsingleport && $(GO) tool mdatagen metadata.yaml
+	cd extension/oidcclientauth && $(GO) tool mdatagen metadata.yaml
 	$(GO) tool builder --config builder.yaml --skip-compilation --skip-get-modules
 	cp _build/components.go cmd/otlp-collector-oidc/components.go
 
 ## generate-check: fail if generated code differs from what is committed.
 generate-check: generate
-	@git diff --exit-code -- receiver cmd || (echo "generated code is stale: run make generate" >&2; exit 1)
-	@test -z "$$(git status --porcelain -- receiver cmd)" || (git status --porcelain -- receiver cmd >&2; echo "generated files are not committed" >&2; exit 1)
+	@git diff --exit-code -- receiver extension cmd || (echo "generated code is stale: run make generate" >&2; exit 1)
+	@test -z "$$(git status --porcelain -- receiver extension cmd)" || (git status --porcelain -- receiver extension cmd >&2; echo "generated files are not committed" >&2; exit 1)
 
 ## versions-check: builder.yaml and go.mod pin the same collector release.
 versions-check:

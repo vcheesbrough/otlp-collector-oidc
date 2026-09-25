@@ -1,8 +1,9 @@
 #!/bin/sh
 # Smoke-tests a built image the way the README's quick start runs it: nothing
-# mounted, only OTEL_EXPORTER_OTLP_ENDPOINT set. Checks the OCI version label,
-# the version subcommand and target_info agree, that HEALTHCHECK passes with
-# no upstream, and that an export is accepted over the embedded certificate.
+# mounted, only the required variables set. Checks the OCI version label, the
+# version subcommand and target_info agree, that HEALTHCHECK passes with no
+# upstream and no reachable identity provider, and that an export without a
+# token is refused as 'no token' over the embedded certificate.
 set -eu
 
 image=$1
@@ -19,7 +20,8 @@ reported=$(docker run --rm "$image" version)
 [ "$reported" = "$version" ] || fail "'version' reports '$reported', want '$version'"
 
 cid=$(docker run -d -p 127.0.0.1:4318:4318 -p 127.0.0.1:8888:8888 \
-	-e OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317 "$image")
+	-e OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317 \
+	-e OIDC_ISSUER_URL=https://issuer.invalid -e OIDC_AUDIENCE=smoke "$image")
 trap 'docker rm -f "$cid" >/dev/null' EXIT
 
 i=0
@@ -29,12 +31,16 @@ until [ "$(docker inspect -f '{{ .State.Health.Status }}' "$cid")" = healthy ]; 
 	sleep 1
 done
 
-code=$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:4318/v1/traces \
+answer=$(curl -sk -w '\n%{http_code}' https://localhost:4318/v1/traces \
 	-H 'Content-Type: application/json' \
 	-d '{"resourceSpans":[{"scopeSpans":[{"spans":[{"traceId":"5b8efff798038103d269b633813fc60c","spanId":"eee19b7ec3c1b174","name":"smoke","startTimeUnixNano":"1","endTimeUnixNano":"2"}]}]}]}')
-[ "$code" = 200 ] || { docker logs "$cid" >&2; fail "export answered $code, want 200"; }
+code=$(printf '%s\n' "$answer" | tail -n 1)
+# protojson randomly spaces its separators, so drop the optional space after ',' and ':'.
+body=$(printf '%s\n' "$answer" | sed '$d' | sed -E 's/([,:]) /\1/g')
+[ "$code" = 401 ] || { docker logs "$cid" >&2; fail "export without a token answered $code, want 401"; }
+[ "$body" = '{"code":16,"message":"no token"}' ] || fail "401 body is '$body', want the 'no token' status"
 
 curl -s http://127.0.0.1:8888/metrics | grep -q "^target_info{.*service_version=\"$version\"" ||
 	fail "target_info does not carry service_version=$version"
 
-echo "smoke: $image $version healthy, export accepted, versions agree"
+echo "smoke: $image $version healthy, tokenless export refused, versions agree"

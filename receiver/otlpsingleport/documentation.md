@@ -8,7 +8,7 @@ The following telemetry is emitted by this component.
 
 ### otelcol_otlpsingleport_requests_refused
 
-Requests refused before they reach the pipeline, by transport (grpc, http) and reason (method, media_type, body_too_large, decode, unknown_path, decompress). Refusals by the pipeline itself are receiver_refused_*.
+Requests refused before they reach the pipeline, by transport (grpc, http) and reason (method, media_type, body_too_large, decode, unknown_path, decompress). Refusals by the pipeline itself are receiver_refused_*, and by the authenticator its own counter.
 
 | Unit | Metric Type | Value Type | Monotonic | Stability |
 | ---- | ----------- | ---------- | --------- | --------- |

@@ -13,20 +13,20 @@ import (
 )
 
 func Meter(settings component.TelemetrySettings) metric.Meter {
-	return settings.MeterProvider.Meter("github.com/vcheesbrough/otlp-collector-oidc/receiver/otlpsingleport")
+	return settings.MeterProvider.Meter("github.com/vcheesbrough/otlp-collector-oidc/extension/oidcclientauth")
 }
 
 func Tracer(settings component.TelemetrySettings) trace.Tracer {
-	return settings.TracerProvider.Tracer("github.com/vcheesbrough/otlp-collector-oidc/receiver/otlpsingleport")
+	return settings.TracerProvider.Tracer("github.com/vcheesbrough/otlp-collector-oidc/extension/oidcclientauth")
 }
 
 // TelemetryBuilder provides an interface for components to report telemetry
 // as defined in metadata and user config.
 type TelemetryBuilder struct {
-	meter                         metric.Meter
-	mu                            sync.Mutex
-	registrations                 []metric.Registration
-	OtlpsingleportRequestsRefused metric.Int64Counter
+	meter                    metric.Meter
+	mu                       sync.Mutex
+	registrations            []metric.Registration
+	OidcclientauthRejections metric.Int64Counter
 }
 
 // TelemetryBuilderOption applies changes to default builder.
@@ -58,9 +58,9 @@ func NewTelemetryBuilder(settings component.TelemetrySettings, options ...Teleme
 	}
 	builder.meter = Meter(settings)
 	var err, errs error
-	builder.OtlpsingleportRequestsRefused, err = builder.meter.Int64Counter(
-		"otelcol_otlpsingleport_requests_refused",
-		metric.WithDescription("Requests refused before they reach the pipeline, by transport (grpc, http) and reason (method, media_type, body_too_large, decode, unknown_path, decompress). Refusals by the pipeline itself are receiver_refused_*, and by the authenticator its own counter. [Development]"),
+	builder.OidcclientauthRejections, err = builder.meter.Int64Counter(
+		"otelcol_oidcclientauth_rejections",
+		metric.WithDescription("Requests the authenticator refused, by reason (no_token, invalid_token, missing_scope, missing_claim, not_ready). [Development]"),
 		metric.WithUnit("{request}"),
 	)
 	errs = errors.Join(errs, err)

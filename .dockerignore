@@ -5,4 +5,5 @@
 !cmd/
 !internal/
 !receiver/
+!extension/
 !config/
