@@ -43,8 +43,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          # Only a branch of this repository can mark an iteration: a fork's
+          # branch name is its author's choice.
           branch=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" \
-            --jq '[.[] | select(.merged_at != null)][0].head.ref // ""')
+            --jq '[.[] | select(.merged_at != null and .head.repo.full_name == "${{ github.repository }}")][0].head.ref // ""')
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
       - name: Plan
         id: plan

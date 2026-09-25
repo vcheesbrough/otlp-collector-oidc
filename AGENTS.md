@@ -66,7 +66,10 @@ in a health gate.
 `feat/iteration-N-<slug>`, as `start-iteration` names it — merges and CI passes on
 `main`, `release.yml` tags the merge commit `vM.N.0` (M the current major) and
 publishes `:M.N.0` beside `:edge`. Nobody tags an iteration by hand, and the branch
-name is what marks the merge as a release, so it must follow the convention. Other
+name is what marks the merge as a release, so it must follow the convention: N must
+be exactly the next iteration (a wrong N fails the release run and publishes
+nothing — push the right tag by hand), and only a branch of this repository
+counts, never a fork's. Other
 merges (fixes, Dependabot, `ci/…` branches) publish `:edge` only. A patch release is
 a hand-pushed `vX.Y.P` tag; CI runs on it and `release.yml` publishes it. The MVP is
 the one hand-cut tag: after the MVP card's merge has been released as `v0.N.0`, push

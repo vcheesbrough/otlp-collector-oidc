@@ -11,14 +11,16 @@
 #
 # A merge of an iteration PR (branch feat/iteration-N-...) releases vM.N.0,
 # M being the current major: the iteration number is the minor (AGENTS.md
-# "Versioning"). Any other merge to main publishes :edge only. A pushed v*
-# tag publishes exactly that version. :latest only from 1.0.0 on.
+# "Versioning"). N must be exactly the next iteration, so a mistyped branch
+# fails the release instead of publishing a version nobody can take back.
+# Any other merge to main publishes :edge only. A pushed v* tag publishes
+# exactly that version. :latest only from 1.0.0 on. Every tag lookup is
+# scripts/version.sh's.
 set -eu
 
 : "${IMAGE:?}" "${REF:?}"
 PR_BRANCH=${PR_BRANCH:-}
 here=$(dirname "$0")
-pattern='v[0-9]*.[0-9]*.[0-9]*'
 
 fail() {
 	echo "release-plan: $*" >&2
@@ -37,13 +39,9 @@ main)
 		version=$("$here/version.sh")
 		tags="$IMAGE:edge"
 	else
-		# The highest release reachable, not the nearest: tags can share a commit.
-		last=$(git tag --merged HEAD --list "$pattern" | sort -V | tail -n 1)
-		last=${last:-v0.0.0}
-		last=${last#v}
+		last=$("$here/version.sh" --last)
 		major=${last%%.*}
-		rest=${last#*.}
-		minor=${rest%%.*}
+		next=$(($("$here/version.sh" --last-iteration) + 1))
 		version="$major.$iteration.0"
 		tag="v$version"
 		existing=$(git rev-parse -q --verify "refs/tags/$tag^{commit}" || true)
@@ -51,8 +49,8 @@ main)
 			# A rerun of a release that already tagged this commit.
 			[ "$existing" = "$(git rev-parse HEAD)" ] || fail "$tag already tags another commit"
 			tag=""
-		elif [ "$iteration" -le "$minor" ]; then
-			fail "iteration $iteration would release $version, not after the last release $last"
+		elif [ "$iteration" -ne "$next" ]; then
+			fail "branch says iteration $iteration, but the next iteration is $next (last release $last)"
 		fi
 		tags="$IMAGE:edge,$IMAGE:$version"
 		if stable "$version"; then tags="$tags,$IMAGE:latest"; fi
