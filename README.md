@@ -57,6 +57,7 @@ certificate. OTLP/gRPC clients use the same port and get the same answers as
 | `OIDC_ISSUER_URL` | **required** | Exact `iss` value; discovery at `<issuer>/.well-known/openid-configuration` |
 | `OIDC_AUDIENCE` | **required** | Value `aud` must contain, normally the provider's client id |
 | `OIDC_DISCOVERY_RETRY` | `30s` | Retry interval while discovery fails; requests get `503` meanwhile |
+| `OIDC_JWKS_REFRESH` | `10m` | JWKS re-read interval: the longest a key the provider removes is still trusted |
 | `REQUIRED_SCOPE` | `telemetry:write` | Must appear in `scope` (or `scp`) |
 | `CLOCK_SKEW` | `60s` | Tolerance on `exp`, `nbf` and `iat` |
 | `REJECTION_LOG_INTERVAL` | `60s` | At most one warning per refusal reason per interval |

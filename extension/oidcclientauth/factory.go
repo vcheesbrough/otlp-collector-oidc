@@ -49,11 +49,13 @@ func newAuthenticator(set extension.Settings, cfg *Config, httpClient *http.Clie
 		resourceAttributes: cfg.ResourceAttributes,
 	}
 	a.provider = &provider{
-		issuer: cfg.IssuerURL,
-		retry:  cfg.DiscoveryRetry,
-		client: httpClient,
-		logger: set.Logger,
-		ready:  a.keys.Store,
+		issuer:  cfg.IssuerURL,
+		retry:   cfg.DiscoveryRetry,
+		refresh: cfg.JWKSRefresh,
+		client:  httpClient,
+		logger:  set.Logger,
+		now:     now,
+		ready:   a.keys.Store,
 	}
 	return a, nil
 }

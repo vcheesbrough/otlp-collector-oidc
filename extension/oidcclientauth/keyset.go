@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/go-jose/go-jose/v4"
 )
@@ -15,29 +16,40 @@ import (
 // maxJWKSBytes bounds a JWKS response; a real one is a few kilobytes.
 const maxJWKSBytes = 1 << 20
 
+// minRefreshInterval is the least time between two fetches unknown kids
+// may cause; the initial load and the scheduled refresh do not count. The lookup precedes signature verification, so without it any
+// client could make every request a request to the provider, and queue
+// legitimate lookups behind those fetches.
+const minRefreshInterval = 10 * time.Second
+
 var (
 	errUnknownKey   = errors.New("no key in the JWKS has the token's kid")
 	errBadSignature = errors.New("signature does not verify")
 )
 
 // keySet is the provider's JWKS, cached. A token whose kid is not cached
-// triggers one refresh, which is how a rotated-in key is found; concurrent
-// refreshes coalesce into one fetch.
+// triggers one refresh, which is how a rotated-in key is found: at most one
+// per minRefreshInterval, and concurrent misses share it. The provider's
+// scheduled refresh is how a removed key stops being trusted.
 type keySet struct {
 	client *http.Client
 	url    string
+	now    func() time.Time
 
-	mu         sync.RWMutex // guards keys and generation
+	mu         sync.RWMutex // guards keys, generation and missFetched
 	keys       []jose.JSONWebKey
 	generation uint64
+	// missFetched is when the last fetch an unknown kid caused began,
+	// successful or not.
+	missFetched time.Time
 
 	// refreshing serialises fetches, so requests that miss together wait for
 	// one fetch rather than each making their own.
 	refreshing sync.Mutex
 }
 
-func newKeySet(client *http.Client, jwksURL string) *keySet {
-	return &keySet{client: client, url: jwksURL}
+func newKeySet(client *http.Client, jwksURL string, now func() time.Time) *keySet {
+	return &keySet{client: client, url: jwksURL, now: now}
 }
 
 // VerifySignature returns the payload of jws if its signature verifies with
@@ -71,15 +83,19 @@ func (k *keySet) lookup(kid, alg string) (*jose.JSONWebKey, uint64) {
 }
 
 // refreshFor refreshes the cache unless another request already did since
-// generation, then looks again. A failed fetch leaves the cache as it was and
-// the kid unknown.
+// generation or a fetch began within minRefreshInterval, then looks again. A
+// failed fetch leaves the cache as it was and the kid unknown.
 func (k *keySet) refreshFor(ctx context.Context, kid, alg string, generation uint64) *jose.JSONWebKey {
 	k.refreshing.Lock()
 	defer k.refreshing.Unlock()
 	k.mu.RLock()
-	stale := k.generation == generation
+	now := k.now()
+	stale := k.generation == generation && now.Sub(k.missFetched) >= minRefreshInterval
 	k.mu.RUnlock()
 	if stale {
+		k.mu.Lock()
+		k.missFetched = now
+		k.mu.Unlock()
 		if err := k.refresh(ctx); err != nil {
 			return nil
 		}
@@ -88,7 +104,8 @@ func (k *keySet) refreshFor(ctx context.Context, kid, alg string, generation uin
 	return key
 }
 
-// refresh fetches the JWKS and replaces the cache with it.
+// refresh fetches the JWKS and replaces the cache with it. A failed fetch
+// keeps the cache.
 func (k *keySet) refresh(ctx context.Context) error {
 	keys, err := k.fetch(ctx)
 	if err != nil {

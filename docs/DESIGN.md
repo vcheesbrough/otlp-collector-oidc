@@ -195,8 +195,10 @@ Implements `extensionauth.Server`.
 - **Validation:** discovery with `github.com/coreos/go-oidc/v3` at startup, with
   background retry on failure (the not-ready error meanwhile, which the receiver
   answers as 503 — §3.3 — never a crash) until discovery and the first JWKS load have
-  both succeeded; a JWKS cache refreshed once on an unknown `kid`, so rotation needs
-  no restart; `aud` must contain `audience`; RS256/384/512 and ES256/384/512;
+  both succeeded; a JWKS cache refreshed once on an unknown `kid` (at most once per
+  10 s, since the lookup precedes signature verification and any client can present
+  a made-up `kid`) and re-read every `OIDC_JWKS_REFRESH`, so a key rotated in needs
+  no restart and a key removed stops being trusted within the interval; `aud` must contain `audience`; RS256/384/512 and ES256/384/512;
   required `exp` / `iss` / `aud`. Then `scope` (or an array `scp`) must contain
   `required_scope`. go-oidc's `IDTokenVerifier` is for ID tokens and its
   `RemoteKeySet` neither tells an unknown `kid` from a bad signature nor reports when
@@ -280,6 +282,7 @@ without it, naming the variable.
 | `OIDC_ISSUER_URL` | **required** | Exact `iss` value; discovery at `<issuer>/.well-known/openid-configuration` |
 | `OIDC_AUDIENCE` | **required** | Value `aud` must contain — normally the provider's client id |
 | `OIDC_DISCOVERY_RETRY` | `30s` | Background retry interval while discovery fails (requests get 503 meanwhile) |
+| `OIDC_JWKS_REFRESH` | `10m` | JWKS re-read interval once loaded: the longest a removed key stays trusted. A failed re-read keeps the cache |
 | `REQUIRED_SCOPE` | `telemetry:write` | Must appear in `scope` (or `scp`) |
 | `REQUIRED_CLAIMS` | `sub,preferred_username` | Each must be present and non-empty |
 | `CLAIM_ATTRIBUTES` | `sub=user.id,preferred_username=user.name,email=user.email,name=user.full_name` | Claim → span/log attribute; absent optional claims are skipped |

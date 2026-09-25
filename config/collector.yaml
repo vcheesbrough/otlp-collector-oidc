@@ -40,6 +40,7 @@ extensions:
     issuer_url: ${env:OIDC_ISSUER_URL}
     audience: ${env:OIDC_AUDIENCE}
     discovery_retry: ${env:OIDC_DISCOVERY_RETRY:-30s}
+    jwks_refresh: ${env:OIDC_JWKS_REFRESH:-10m}
     required_scope: ${env:REQUIRED_SCOPE:-telemetry:write}
     clock_skew: ${env:CLOCK_SKEW:-60s}
     rejection_log_interval: ${env:REJECTION_LOG_INTERVAL:-60s}

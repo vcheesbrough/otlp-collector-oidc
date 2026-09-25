@@ -15,6 +15,7 @@ import (
 // Defaults, as DESIGN §6.2 states them.
 const (
 	defaultDiscoveryRetry       = 30 * time.Second
+	defaultJWKSRefresh          = 10 * time.Minute
 	defaultRequiredScope        = "telemetry:write"
 	defaultClockSkew            = 60 * time.Second
 	defaultRejectionLogInterval = 60 * time.Second
@@ -37,6 +38,9 @@ type Config struct {
 	Audience string `mapstructure:"audience"`
 	// DiscoveryRetry is how long to wait between failed discovery attempts.
 	DiscoveryRetry time.Duration `mapstructure:"discovery_retry"`
+	// JWKSRefresh is how often the JWKS is re-read once loaded: the longest a
+	// key the provider removes is still trusted.
+	JWKSRefresh time.Duration `mapstructure:"jwks_refresh"`
 	// RequiredScope must appear in scope (or scp).
 	RequiredScope string `mapstructure:"required_scope"`
 	// RequiredClaims must each be present and non-empty.
@@ -68,6 +72,7 @@ var (
 	ErrIssuerNotURL          = errors.New("issuer_url must be an absolute http or https URL")
 	ErrNoAudience            = errors.New("audience must be set")
 	ErrDiscoveryRetry        = errors.New("discovery_retry must be positive")
+	ErrJWKSRefresh           = errors.New("jwks_refresh must be positive")
 	ErrRequiredScope         = errors.New("required_scope must be one non-empty scope token")
 	ErrEmptyRequiredClaim    = errors.New("required_claims must not contain an empty name")
 	ErrEmptyClaimAttribute   = errors.New("claim_attributes must not contain an empty claim or attribute")
@@ -93,6 +98,9 @@ func (c *Config) Validate() error {
 	}
 	if c.DiscoveryRetry <= 0 {
 		errs = append(errs, ErrDiscoveryRetry)
+	}
+	if c.JWKSRefresh <= 0 {
+		errs = append(errs, ErrJWKSRefresh)
 	}
 	if c.RequiredScope == "" || strings.ContainsAny(c.RequiredScope, " \t\r\n") {
 		errs = append(errs, ErrRequiredScope)
@@ -155,6 +163,7 @@ func createDefaultConfig() component.Config {
 	}
 	return &Config{
 		DiscoveryRetry: defaultDiscoveryRetry,
+		JWKSRefresh:    defaultJWKSRefresh,
 		RequiredScope:  defaultRequiredScope,
 		RequiredClaims: []string{"sub", "preferred_username"},
 		ClaimAttributes: map[string]string{

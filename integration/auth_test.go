@@ -259,17 +259,6 @@ func TestAuth(t *testing.T) {
 		}
 	})
 
-	t.Run("an unknown kid is found after rotation", func(t *testing.T) {
-		fetches := iss.JWKSFetches()
-		iss.Rotate(t)
-		rotated := keep(iss.Sign(t, jose.RS256, valid))
-		for _, p := range protocols {
-			got := env.clients.present(t, p, bearer(rotated), "auth/rotated/"+p.String())
-			require.Equal(t, codes.OK, got.code, got.message)
-		}
-		assert.Equal(t, int64(1), iss.JWKSFetches()-fetches, "one refresh finds the new key; the second request uses the cache")
-	})
-
 	t.Run("one warning per reason, never the token", func(t *testing.T) {
 		for range 20 {
 			got := env.clients.present(t, protocolHTTP, presentation{}, "auth/hammer")
@@ -285,6 +274,59 @@ func TestAuth(t *testing.T) {
 			if i := strings.LastIndexByte(token, '.'); i > 0 && i < len(token)-1 {
 				assert.NotContains(t, out, token[i+1:], "a token's signature was logged")
 			}
+		}
+	})
+}
+
+// TestKeys covers the key set's lifecycle: a rotated-in kid is found by one
+// refresh, a stream of unknown kids cannot make every request a fetch, and a
+// key the issuer removes stops being trusted within OIDC_JWKS_REFRESH.
+func TestKeys(t *testing.T) {
+	t.Run("rotation in, and unknown kids are throttled", func(t *testing.T) {
+		env := startShipped(t, nil)
+		iss := env.issuer
+		fetches := iss.JWKSFetches()
+		iss.Rotate(t)
+		rotated := iss.Sign(t, jose.RS256, iss.Claims())
+		for _, p := range protocols {
+			got := env.clients.present(t, p, bearer(rotated), "keys/rotated/"+p.String())
+			require.Equal(t, codes.OK, got.code, got.message)
+		}
+		assert.Equal(t, int64(1), iss.JWKSFetches()-fetches, "one refresh finds the new key; the second request uses the cache")
+
+		fetches = iss.JWKSFetches()
+		for i := range 10 {
+			p := protocols[i%len(protocols)]
+			got := env.clients.present(t, p, bearer(iss.SignUnpublished(t, iss.Claims())), "keys/unknown/"+p.String())
+			require.Equal(t, "invalid token: unknown kid", got.message)
+		}
+		assert.Equal(t, int64(0), iss.JWKSFetches()-fetches, "unknown kids right after a refresh fetch nothing")
+	})
+
+	t.Run("rotation out", func(t *testing.T) {
+		env := startShipped(t, map[string]string{"OIDC_JWKS_REFRESH": "200ms"})
+		iss := env.issuer
+		old := iss.Sign(t, jose.RS256, iss.Claims())
+		require.Equal(t, codes.OK, env.clients.present(t, protocolHTTP, bearer(old), "keys/old").code)
+
+		iss.Rotate(t)
+		current := iss.Sign(t, jose.ES256, iss.Claims())
+		iss.RetireOld()
+		for _, p := range protocols {
+			require.Eventually(t, func() bool {
+				return env.clients.present(t, p, bearer(old), "keys/retired/"+p.String()).message == "invalid token: unknown kid"
+			}, eventually, 50*time.Millisecond, "a retired key was still trusted over %s", p)
+			got := env.clients.present(t, p, bearer(current), "keys/current/"+p.String())
+			assert.Equal(t, codes.OK, got.code, got.message)
+		}
+
+		iss.Stop()
+		require.Eventually(t, func() bool {
+			return strings.Contains(env.collector.Output(), "JWKS refresh failed; keeping the cached keys")
+		}, eventually, 50*time.Millisecond, "the scheduled refresh never met the stopped issuer")
+		for _, p := range protocols {
+			got := env.clients.present(t, p, bearer(current), "keys/issuer-gone/"+p.String())
+			assert.Equal(t, codes.OK, got.code, "a failed refresh keeps the cache: %s", got.message)
 		}
 	})
 }

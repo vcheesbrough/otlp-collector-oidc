@@ -119,6 +119,14 @@ func (i *Issuer) Rotate(t *testing.T) {
 	i.published = append(i.published, rsaKey.public(), ecKey.public())
 }
 
+// RetireOld removes every key but the current RSA and EC ones from the JWKS,
+// as a provider does when rotation ends or a key is revoked.
+func (i *Issuer) RetireOld() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.published = []jose.JSONWebKey{i.rsa.public(), i.ec.public()}
+}
+
 // Claims is a payload the collector accepts: this issuer, the harness's
 // audience, the required scope and claims, the optional ones, and an hour to
 // live.

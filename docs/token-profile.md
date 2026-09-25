@@ -33,10 +33,21 @@ The collector reads `<OIDC_ISSUER_URL>/.well-known/openid-configuration`, which
 loads that JWKS. Until both have succeeded it is not ready (below); it retries every
 `OIDC_DISCOVERY_RETRY` and never exits for it.
 
-Keys are cached. A token whose `kid` is not in the cache makes the collector fetch the
-JWKS again, once, before refusing it, so a provider may rotate keys at any time as
-long as it publishes the new key before signing with it. Keys marked `"use": "enc"`,
-private keys and key types the collector does not know are ignored.
+Keys are cached, and the JWKS is re-read every `OIDC_JWKS_REFRESH` (default 10
+minutes); a failed re-read keeps the cached keys.
+
+- **Rotating a key in.** A token whose `kid` is not in the cache makes the collector
+  fetch the JWKS again, once, before refusing it — at most once every 10 seconds, so
+  a stream of made-up `kid`s cannot turn every request into a request to the
+  provider. A provider publishes a new key before signing with it; a token signed
+  with a key published less than 10 seconds after the previous such fetch may be
+  refused `unknown kid` until the window passes or the scheduled re-read finds it.
+- **Rotating a key out.** A key removed from the JWKS stops being trusted at the
+  next scheduled re-read: within `OIDC_JWKS_REFRESH`. That is the longest a revoked
+  signing key keeps working.
+
+Keys marked `"use": "enc"`, private keys and key types the collector does not know
+are ignored.
 
 ## Rules
 
