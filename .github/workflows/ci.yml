@@ -98,12 +98,28 @@ jobs:
           path: reports/*.xml
           reporter: java-junit
           list-tests: failed
+          # A check run with counts and per-test detail; the job summary
+          # below carries the same counts.
+          use-actions-summary: false
       - name: Count passed tests
         id: counts
         if: ${{ !cancelled() }}
         run: |
-          passed=$(jq -s '[.[] | select(.Action == "pass" and .Test != null)] | length' reports/*.json)
+          count() { jq -s --arg a "$1" '[.[] | select(.Action == $a and .Test != null)] | length' reports/*.json; }
+          passed=$(count pass) failed=$(count fail) skipped=$(count skip)
           echo "passed=$passed" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Tests"
+            echo
+            echo "| Passed | Failed | Skipped |"
+            echo "| ---: | ---: | ---: |"
+            echo "| $passed | $failed | $skipped |"
+            if [ "$failed" -gt 0 ]; then
+              echo
+              echo "Failed:"
+              jq -rs '.[] | select(.Action == "fail" and .Test != null) | "- `\(.Package | sub(".*/"; ""))`: `\(.Test)`"' reports/*.json
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Coverage (unit + integration)
         id: coverage
         if: ${{ !cancelled() }}
