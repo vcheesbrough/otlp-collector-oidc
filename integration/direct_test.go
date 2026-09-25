@@ -15,7 +15,8 @@ import (
 // queue or retry between them, so the upstream's answer reaches the client.
 // The shipped pipeline decouples the two by design; this shape exists to
 // observe the receiver's consumer-error mapping from outside, and to drive
-// its metrics path, which the shipped pipeline does not wire yet.
+// its metrics path, which the shipped pipeline does not wire yet. It has no
+// authenticator: nothing here is about who the client is.
 const directConfig = `
 receivers:
   otlpsingleport:
@@ -63,7 +64,7 @@ func TestDirect(t *testing.T) {
 			"OTEL_EXPORTER_OTLP_ENDPOINT": sink.Endpoint(),
 		},
 	})
-	cl := newClients(t, c.ListenAddr, cert.Pool)
+	cl := newClients(t, c.ListenAddr, cert.Pool, "")
 
 	signals := []struct {
 		signal   harness.Signal

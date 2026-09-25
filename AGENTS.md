@@ -195,5 +195,6 @@ baseline everyone assumes. CI enforces what a tool can; review enforces the rest
 
 Pre-release. Iteration 1 (`0.1.0`) delivers the module, the single-port receiver, the shipped
 pipeline for traces and logs, the image, CI with its test report and badges, and the
-integration harness. Authentication is the next card; nothing may face untrusted
-clients until it lands.
+integration harness. Iteration 2 (`0.2.0`) authenticates every request with an OIDC
+access token (`extension/oidcclientauth`, `docs/token-profile.md`) and adds a fake
+issuer to the harness; identity stamping is the next card.

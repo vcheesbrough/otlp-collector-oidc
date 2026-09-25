@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	grpcgzip "google.golang.org/grpc/encoding/gzip"
+	"google.golang.org/grpc/metadata"
 )
 
 // Signal is an OTLP signal.
@@ -145,6 +146,15 @@ type Response struct {
 type HTTPClient struct {
 	base   string
 	client *http.Client
+	// bearer, when set, is sent as Authorization: Bearer on every request
+	// whose header does not set Authorization itself.
+	bearer string
+}
+
+// WithBearer returns a client on the same connection pool that presents
+// token, or no token when it is empty.
+func (c *HTTPClient) WithBearer(token string) *HTTPClient {
+	return &HTTPClient{base: c.base, client: c.client, bearer: token}
 }
 
 // NewHTTPClient returns a client for addr that trusts pool. It negotiates
@@ -170,6 +180,9 @@ func (c *HTTPClient) Do(ctx context.Context, method, path string, header http.He
 		for _, v := range vs {
 			req.Header.Add(k, v)
 		}
+	}
+	if c.bearer != "" && req.Header.Get("Authorization") == "" {
+		req.Header.Set("Authorization", "Bearer "+c.bearer)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -202,6 +215,15 @@ func (c *HTTPClient) Export(ctx context.Context, s Signal, m Message, e Encoding
 // GRPCClient speaks OTLP/gRPC to the listener over TLS.
 type GRPCClient struct {
 	conn *grpc.ClientConn
+	// bearer, when set, is sent as authorization: Bearer metadata on every
+	// call.
+	bearer string
+}
+
+// WithBearer returns a client on the same connection that presents token,
+// or no token when it is empty.
+func (c *GRPCClient) WithBearer(token string) *GRPCClient {
+	return &GRPCClient{conn: c.conn, bearer: token}
 }
 
 // NewGRPCClient dials addr trusting pool and closes the connection when the
@@ -220,6 +242,9 @@ func (c *GRPCClient) Export(ctx context.Context, m Message, comp Compression) er
 	var opts []grpc.CallOption
 	if comp == CompressionGzip {
 		opts = append(opts, grpc.UseCompressor(grpcgzip.Name))
+	}
+	if c.bearer != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+c.bearer)
 	}
 	var err error
 	switch req := m.(type) {

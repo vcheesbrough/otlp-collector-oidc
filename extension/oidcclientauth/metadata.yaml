@@ -1,0 +1,27 @@
+display_name: OIDC client authenticator
+type: oidcclientauth
+github_project: vcheesbrough/otlp-collector-oidc
+
+status:
+  class: extension
+  stability:
+    development: [extension]
+  disable_codecov_badge: true
+
+telemetry:
+  metrics:
+    oidcclientauth_rejections:
+      enabled: true
+      stability: development
+      description: >-
+        Requests the authenticator refused, by reason (no_token,
+        invalid_token, missing_scope, missing_claim, not_ready).
+      unit: "{request}"
+      sum:
+        value_type: int
+        monotonic: true
+
+tests:
+  config:
+    issuer_url: http://127.0.0.1:1
+    audience: test

@@ -22,15 +22,7 @@ const smallCap = 1024
 // at its boundary: an HTTP body may be exactly the cap, a gRPC message the
 // cap less its 5-byte frame header, and one byte more is refused on each.
 func TestSmallCap(t *testing.T) {
-	cert := harness.NewCertificate(t)
-	sink := harness.NewSink(t)
-	c := harness.Start(t, binary, harness.Options{Env: map[string]string{
-		"TLS_CERT_FILE":               cert.CertFile,
-		"TLS_KEY_FILE":                cert.KeyFile,
-		"OTEL_EXPORTER_OTLP_ENDPOINT": sink.Endpoint(),
-		"MAX_REQUEST_BODY_BYTES":      strconv.Itoa(smallCap),
-	}})
-	cl := newClients(t, c.ListenAddr, cert.Pool)
+	cl := startShipped(t, map[string]string{"MAX_REQUEST_BODY_BYTES": strconv.Itoa(smallCap)}).clients
 
 	httpCases := []struct {
 		name       string
@@ -101,6 +93,8 @@ func TestRefusesToStart(t *testing.T) {
 		"TLS_CERT_FILE":               cert.CertFile,
 		"TLS_KEY_FILE":                cert.KeyFile,
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
+		"OIDC_ISSUER_URL":             "http://127.0.0.1:1",
+		"OIDC_AUDIENCE":               harness.Audience,
 	}
 	with := func(k, v string) map[string]string {
 		env := map[string]string{}
@@ -126,6 +120,11 @@ func TestRefusesToStart(t *testing.T) {
 		{name: "body cap below the gRPC frame header", opts: harness.Options{Env: with("MAX_REQUEST_BODY_BYTES", "5")}, wantText: "max_request_body_size must be between 6 and 2147483647"},
 		{name: "no listen endpoint", opts: harness.Options{ConfigYAML: emptyEndpoint, Env: base}, wantText: "endpoint must be set"},
 		{name: "no upstream endpoint", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "")}, wantText: "endpoint"},
+		{name: "no issuer", opts: harness.Options{Env: with("OIDC_ISSUER_URL", "")}, wantText: "issuer_url must be set"},
+		{name: "issuer is not a URL", opts: harness.Options{Env: with("OIDC_ISSUER_URL", "issuer.example.com")}, wantText: "issuer_url must be an absolute http or https URL"},
+		{name: "no audience", opts: harness.Options{Env: with("OIDC_AUDIENCE", "")}, wantText: "audience must be set"},
+		{name: "required scope with a space", opts: harness.Options{Env: with("REQUIRED_SCOPE", "telemetry write")}, wantText: "required_scope must be one non-empty scope token"},
+		{name: "negative clock skew", opts: harness.Options{Env: with("CLOCK_SKEW", "-1s")}, wantText: "clock_skew must not be negative"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

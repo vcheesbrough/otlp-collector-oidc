@@ -47,12 +47,14 @@ type clients struct {
 	grpc  *harness.GRPCClient
 }
 
-func newClients(t *testing.T, addr string, pool *x509.CertPool) clients {
+// newClients returns clients for addr that present bearer on every request,
+// or no token when it is empty.
+func newClients(t *testing.T, addr string, pool *x509.CertPool, bearer string) clients {
 	t.Helper()
 	return clients{
-		http:  harness.NewHTTPClient(addr, pool, false),
-		http1: harness.NewHTTPClient(addr, pool, true),
-		grpc:  harness.NewGRPCClient(t, addr, pool),
+		http:  harness.NewHTTPClient(addr, pool, false).WithBearer(bearer),
+		http1: harness.NewHTTPClient(addr, pool, true).WithBearer(bearer),
+		grpc:  harness.NewGRPCClient(t, addr, pool).WithBearer(bearer),
 	}
 }
 

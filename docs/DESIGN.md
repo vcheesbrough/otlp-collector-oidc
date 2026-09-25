@@ -94,8 +94,8 @@ The 503 is the receiver's doing, not the extension's: `Authenticate` returns a
 distinguished not-ready error, the interceptor passes it to the receiver's error
 handler as it does every other authenticator error, and that handler alone answers
 503 with a `Retry-After` for this one error and writes every other status it is given
-unchanged (§4.1). Over gRPC the same plain-text answers reach the client as
-`Unavailable` and `Unauthenticated` (§10).
+unchanged (§4.1). Over gRPC the handler answers with the gRPC status itself —
+`Unavailable` and `Unauthenticated`, with the same text (§4.1, §10).
 
 ### 3.4 The product's own logs go upstream, as OTLP
 
@@ -154,7 +154,18 @@ Built only on public collector and `pdata` APIs; not a fork of the stock receive
   for the extension's not-ready error and writes every other status it is handed
   unchanged — `401` for any other authenticator error, the decompressor's own for a
   bad or oversized body. The handler sees only the error text, so the not-ready error
-  is a fixed string the extension and the receiver share as a constant.
+  is a fixed string the extension and the receiver share as a constant
+  (`oidcclientauth.ErrNotReady`).
+- **Authenticator answers speak the client's protocol.** A gRPC client handed a
+  plain-text HTTP `401` or `503` sees only the status — grpc-go reports
+  `Unauthenticated` or `Unavailable` with a transport message and drops the body —
+  so for a gRPC request the handler answers an authenticator error as a gRPC
+  trailers-only response instead: `grpc-status` `Unauthenticated` with the refusal
+  text, or `Unavailable` with `not ready` and a `RetryInfo`. Over HTTP a `401`
+  carries `WWW-Authenticate: Bearer`, and a `503` `Retry-After` plus the same
+  `RetryInfo` in its OTLP status body. The decompressor's answers are unchanged.
+  Authenticator refusals are the authenticator's to count, so they never reach
+  `otlpsingleport_requests_refused`.
 - **Own telemetry:** the standard `receiver_accepted_*` / `receiver_refused_*` via
   `receiverhelper`, so dashboards built for stock receivers read this one unchanged,
   and `otlpsingleport_requests_refused{transport, reason}` for every request refused
@@ -181,21 +192,27 @@ Implements `extensionauth.Server`.
   access token it can put in a header, and flushes on unload with
   `fetch(…, { keepalive: true })`, which carries headers where `navigator.sendBeacon`
   cannot.
-- **Validation** with `github.com/coreos/go-oidc/v3`: discovery at startup with
+- **Validation:** discovery with `github.com/coreos/go-oidc/v3` at startup, with
   background retry on failure (the not-ready error meanwhile, which the receiver
-  answers as 503 — §3.3 — never a crash); JWKS cache
-  with rotation; `aud` must contain `audience`; RS256/384/512 and ES256/384/512;
+  answers as 503 — §3.3 — never a crash) until discovery and the first JWKS load have
+  both succeeded; a JWKS cache refreshed once on an unknown `kid`, so rotation needs
+  no restart; `aud` must contain `audience`; RS256/384/512 and ES256/384/512;
   required `exp` / `iss` / `aud`. Then `scope` (or an array `scp`) must contain
-  `required_scope`.
+  `required_scope`. go-oidc's `IDTokenVerifier` is for ID tokens and its
+  `RemoteKeySet` neither tells an unknown `kid` from a bad signature nor reports when
+  its keys have loaded, so the key set and the access-token rules are the
+  extension's own, on `go-jose` (which go-oidc uses).
 - **Required claims** (`required_claims`, default `sub`, `preferred_username`) must be
   present and non-empty; otherwise the 401 body is `missing claim: <name>`.
 - **Auth context:** every claim in `claim_attributes` (default `sub→user.id`,
   `preferred_username→user.name`, `email→user.email`, `name→user.full_name`; optional
   ones only when present) plus every key of `resource_attributes`, a static map the
   deployer sets so the deployment, not the client, states them.
-- **Own telemetry:** `oidcclientauth_rejections_total{reason}` with a bounded reason
-  set (`no_token`, `invalid_token`, `missing_scope`, `missing_claim`, `not_ready`);
-  one rate-limited warning per reason.
+- **Own telemetry:** `oidcclientauth_rejections{reason}` (on `:8888` as
+  `otelcol_oidcclientauth_rejections`, named like the receiver's counter) with a
+  bounded reason set (`no_token`, `invalid_token`, `missing_scope`, `missing_claim`,
+  `not_ready`); one rate-limited warning per reason, carrying the count it
+  suppressed and never the token.
 
 **`resource_attributes` is optional; `deployment.environment.name` and the estate's
 path marker (`telemetry_source=client`) are its usual content.**
@@ -267,7 +284,7 @@ without it, naming the variable.
 | `REQUIRED_CLAIMS` | `sub,preferred_username` | Each must be present and non-empty |
 | `CLAIM_ATTRIBUTES` | `sub=user.id,preferred_username=user.name,email=user.email,name=user.full_name` | Claim → span/log attribute; absent optional claims are skipped |
 | `CLIENT_RESOURCE_ATTRIBUTES` | *(empty = client's values kept)* | `key=value,…` stamped onto every **client** resource, overwriting the client's; `deployment.environment.name` and the estate's path marker (`telemetry_source=client`) recommended. Not `OTEL_RESOURCE_ATTRIBUTES`, which describes the collector itself |
-| `CLOCK_SKEW` | `60s` | Tolerance on `exp` / `nbf` |
+| `CLOCK_SKEW` | `60s` | Tolerance on `exp` / `nbf` / `iat` |
 | `REJECTION_LOG_INTERVAL` | `60s` | At most one warning per reason per interval |
 
 **Listener and TLS**
@@ -374,8 +391,8 @@ misconfigured provider diagnoses itself with one `curl`.
 - **Identity, required:** `sub` and `preferred_username`, non-empty → `user.id`,
   `user.name`. **Optional:** `email` → `user.email`, `name` → `user.full_name`. Any
   other claim is ignored.
-- **Failure catalogue** (the body text is the contract). Every refusal of a token is
-  **401**: `no token` · `invalid token: <reason>` · `missing scope: telemetry:write` ·
+- **Failure catalogue** (the body text is the contract; `docs/token-profile.md` lists
+  every rule's text). Every refusal of a token is **401**: `no token` · `invalid token: <reason>` · `missing scope: telemetry:write` ·
   `missing claim: preferred_username`. One answer is not a refusal and is **503** with
   `Retry-After`: `not ready`, while the JWKS has not yet loaded (§3.3) — the only
   status a client should back off and retry rather than fix.
@@ -399,11 +416,12 @@ and one for `/opentelemetry.proto.collector` (never stripped); rate limiting on 
 
 ## 9. Acceptance tests
 
-- **Extension unit:** the bearer path, and a token presented any other way (cookie,
-  query parameter) → `no token`; each required claim missing → the named
-  message; optional claims absent → no attribute; `claim_attributes` and
-  `resource_attributes` land in the auth context (an empty map means no resource
-  action); counter labels bounded; warnings rate-limited.
+- **Extension unit**, only for what cannot be observed from outside: optional claims
+  absent → no attribute; `claim_attributes` and `resource_attributes` land in the
+  auth context (an empty map means no resource action); the warning window's edge.
+  Everything else — the bearer path, a token presented any other way (cookie, query
+  parameter) → `no token`, every rule of the token profile, counter labels bounded,
+  one warning per reason — is the integration table.
 - **Receiver** (integration, like everything observable from outside):
   dispatch (h2 + `application/grpc` → gRPC; `/v1/*` + protobuf/JSON
   → HTTP; other paths 404, methods 405, content types 415); every signal in every
@@ -457,13 +475,18 @@ suite, so a version bump re-proves them):
   receiver's unknown-service handler answers `Unimplemented` and counts it itself.
 - HTTP/1.1 with `Content-Type: application/grpc` is not gRPC: it is dispatched as
   OTLP/HTTP and answers `404` on a gRPC path.
+- The interceptor's plain-text `401` and `503` would reach a gRPC client as
+  `Unauthenticated` and `Unavailable`, but without the refusal text, which grpc-go
+  drops for a non-gRPC answer; so the error handler answers gRPC requests with a
+  trailers-only gRPC status carrying it (§4.1). The integration suite asserts the
+  exact text over both protocols.
+- `client.FromContext(ctx).Auth` inside the handlers — gRPC through `ServeHTTP` and
+  HTTP alike — carries the auth data the interceptor set: grpc-go's handler transport
+  derives the stream context from the request's (a receiver unit test until the
+  pipeline reads the auth context).
 
 **Open:**
 
-- The interceptor's plain-text `401` and `503` reach a gRPC client as
-  `Unauthenticated` and `Unavailable` — with the authenticator.
-- `client.FromContext(ctx).Auth` inside the gRPC handlers carries the extension's
-  auth data when reached via `ServeHTTP`.
 - The `attributes` processor skips an action whose `from_context` key is absent
   (needed for optional claims); otherwise export empty defaults and delete them in
   `transform`.

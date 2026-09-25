@@ -1,6 +1,7 @@
 # The shipped pipeline. Every value a deployer may change is an environment
 # variable with its default after ":-"; README "Configuration" lists them.
 #
+# Every request is authenticated by oidcclientauth before it is dispatched.
 # Traces and logs: otlpsingleport → memory_limiter → batch → otlp_grpc.
 # Metrics have no pipeline yet, so the receiver answers 404 / Unimplemented
 # for them until the bounded metrics pipeline lands.
@@ -12,6 +13,8 @@ receivers:
     tls:
       cert_file: ${env:TLS_CERT_FILE:-/etc/otlp-collector-oidc/tls/cert.pem}
       key_file: ${env:TLS_KEY_FILE:-/etc/otlp-collector-oidc/tls/key.pem}
+    auth:
+      authenticator: oidcclientauth
 
 processors:
   memory_limiter:
@@ -31,9 +34,18 @@ exporters:
 extensions:
   health_check:
     endpoint: ${env:HEALTH_ADDR:-127.0.0.1:13133}
+  # Claims, their attributes and the static resource attributes keep their
+  # defaults until the renderer can turn lists and maps into YAML.
+  oidcclientauth:
+    issuer_url: ${env:OIDC_ISSUER_URL}
+    audience: ${env:OIDC_AUDIENCE}
+    discovery_retry: ${env:OIDC_DISCOVERY_RETRY:-30s}
+    required_scope: ${env:REQUIRED_SCOPE:-telemetry:write}
+    clock_skew: ${env:CLOCK_SKEW:-60s}
+    rejection_log_interval: ${env:REJECTION_LOG_INTERVAL:-60s}
 
 service:
-  extensions: [health_check]
+  extensions: [health_check, oidcclientauth]
   telemetry:
     metrics:
       readers:

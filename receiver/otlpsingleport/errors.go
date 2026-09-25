@@ -1,14 +1,21 @@
 package otlpsingleport
 
 import (
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/collector/consumer/consumererror"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
+
+	"github.com/vcheesbrough/otlp-collector-oidc/extension/oidcclientauth"
 )
 
 // statusFromConsumerError maps a consumer error to the gRPC status the stock
@@ -74,27 +81,99 @@ func statusFromHTTP(msg string, httpStatus int) *status.Status {
 	return status.New(c, msg)
 }
 
-// newErrorHandler returns the listener's error handler: it counts the
-// refusal and writes the status with writeHandedStatus. Today only the
-// decompressor hands statuses over; the authenticator will too, and must
-// then be told apart here.
+// notReadyRetryAfter is how long a client is asked to wait while the
+// authenticator's provider has not loaded.
+const notReadyRetryAfter = 5 * time.Second
+
+// newErrorHandler returns the listener's error handler. confighttp calls it
+// for failures before the request reaches the dispatcher: an authenticator
+// refusal, always handed over as 401 with the error's text, and a body the
+// decompressor rejects. The authenticator's not-ready error becomes 503 with
+// Retry-After; every other status is written unchanged. Authenticator
+// refusals are counted by the authenticator, the rest here.
 func newErrorHandler(refused *refusals) func(w http.ResponseWriter, r *http.Request, msg string, httpStatus int) {
 	return func(w http.ResponseWriter, r *http.Request, msg string, httpStatus int) {
-		t := transportHTTP
-		if isGRPC(r) {
-			t = transportGRPC
+		switch {
+		case httpStatus == http.StatusUnauthorized && msg == oidcclientauth.ErrNotReady.Error():
+			writeNotReady(w, r, msg)
+		case httpStatus == http.StatusUnauthorized:
+			writeUnauthenticated(w, r, msg)
+		default:
+			t := transportHTTP
+			if isGRPC(r) {
+				t = transportGRPC
+			}
+			refused.count(r.Context(), t, refusalDecompress)
+			writeHandedStatus(w, r, msg, httpStatus)
 		}
-		refused.count(r.Context(), t, refusalDecompress)
-		writeHandedStatus(w, r, msg, httpStatus)
 	}
 }
 
-// writeHandedStatus writes the status the listener hands over. confighttp calls the handler for
-// failures before the request reaches the dispatcher — a body the
-// decompressor rejects, and later an authenticator refusal — and it writes
-// the status it is handed unchanged: as an OTLP rpc.Status in the request's
-// encoding when that is an OTLP encoding, as plain text otherwise, so a gRPC
-// client reads the HTTP status itself.
+// writeUnauthenticated answers an authenticator refusal: 401 with the
+// refusal's text over HTTP, Unauthenticated with the same text over gRPC.
+func writeUnauthenticated(w http.ResponseWriter, r *http.Request, msg string) {
+	if isGRPC(r) {
+		writeGRPCStatus(w, status.New(codes.Unauthenticated, msg))
+		return
+	}
+	w.Header().Set("WWW-Authenticate", "Bearer")
+	writeHandedStatus(w, r, msg, http.StatusUnauthorized)
+}
+
+// writeNotReady answers the authenticator's not-ready error as retryable,
+// with a retry delay: 503 with Retry-After over HTTP, whose OTLP body carries
+// it as RetryInfo, and Unavailable with the RetryInfo over gRPC.
+func writeNotReady(w http.ResponseWriter, r *http.Request, msg string) {
+	st := status.New(codes.Unavailable, msg)
+	if withDelay, err := st.WithDetails(&errdetails.RetryInfo{RetryDelay: durationpb.New(notReadyRetryAfter)}); err == nil {
+		st = withDelay
+	}
+	if isGRPC(r) {
+		writeGRPCStatus(w, st)
+		return
+	}
+	if enc, ok := lookupEncoding(r.Header.Get("Content-Type")); ok {
+		writeStatus(w, enc, http.StatusServiceUnavailable, st)
+		return
+	}
+	w.Header().Set("Retry-After", strconv.FormatInt(int64(notReadyRetryAfter/time.Second), 10))
+	http.Error(w, msg, http.StatusServiceUnavailable)
+}
+
+// writeGRPCStatus answers a gRPC request with st as a trailers-only
+// response, so a gRPC client reads the code and the text themselves rather
+// than an HTTP status it can only guess a code from.
+func writeGRPCStatus(w http.ResponseWriter, st *status.Status) {
+	h := w.Header()
+	h.Set("Content-Type", "application/grpc")
+	h.Set("Grpc-Status", strconv.Itoa(int(st.Code())))
+	h.Set("Grpc-Message", encodeGRPCMessage(st.Message()))
+	if len(st.Details()) > 0 {
+		if b, err := proto.Marshal(st.Proto()); err == nil {
+			h.Set("Grpc-Status-Details-Bin", base64.RawStdEncoding.EncodeToString(b))
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// encodeGRPCMessage percent-encodes msg as the gRPC wire protocol requires
+// of grpc-message: every byte outside printable ASCII, and '%'.
+func encodeGRPCMessage(msg string) string {
+	var b strings.Builder
+	for i := range len(msg) {
+		c := msg[i]
+		if c < ' ' || c > '~' || c == '%' {
+			fmt.Fprintf(&b, "%%%02X", c)
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+// writeHandedStatus writes a status the listener hands over unchanged: as an
+// OTLP rpc.Status in the request's encoding when that is an OTLP encoding, as
+// plain text otherwise, so a gRPC client reads the HTTP status itself.
 func writeHandedStatus(w http.ResponseWriter, r *http.Request, msg string, httpStatus int) {
 	if enc, ok := lookupEncoding(r.Header.Get("Content-Type")); ok {
 		writeStatus(w, enc, httpStatus, statusFromHTTP(msg, httpStatus))

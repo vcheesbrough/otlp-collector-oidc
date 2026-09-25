@@ -26,28 +26,40 @@ hosting. One image, configured with environment variables, TLS on by default.
 
 ## Quick start
 
-> **Authentication is not implemented yet: do not expose this to untrusted clients.**
-
 ```sh
 docker run --rm -p 4318:4318 \
+  -e OIDC_ISSUER_URL=https://idp.example.com/application/o/telemetry/ \
+  -e OIDC_AUDIENCE=your-client-id \
   -e OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4317 \
   ghcr.io/vcheesbrough/otlp-collector-oidc:edge
 ```
 
 ```sh
 curl -k https://localhost:4318/v1/traces \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"resourceSpans":[{"scopeSpans":[{"spans":[{"traceId":"5b8efff798038103d269b633813fc60c","spanId":"eee19b7ec3c1b174","name":"hello","startTimeUnixNano":"1","endTimeUnixNano":"2"}]}]}]}'
 # {"partialSuccess":{}}
 ```
 
-`-k` accepts the image's embedded self-signed certificate. OTLP/gRPC clients use the
-same port.
+`$ACCESS_TOKEN` is a JWT access token from that provider carrying the
+`telemetry:write` scope; [the token profile](docs/token-profile.md) states exactly
+what is accepted. Without one the answer is `401` and names what is wrong —
+`{"code":16,"message":"no token"}` — and until the provider's keys have loaded it is
+`503` `not ready` with `Retry-After`. `-k` accepts the image's embedded self-signed
+certificate. OTLP/gRPC clients use the same port and get the same answers as
+`Unauthenticated` and `Unavailable`.
 
 ## Configuration
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
+| `OIDC_ISSUER_URL` | **required** | Exact `iss` value; discovery at `<issuer>/.well-known/openid-configuration` |
+| `OIDC_AUDIENCE` | **required** | Value `aud` must contain, normally the provider's client id |
+| `OIDC_DISCOVERY_RETRY` | `30s` | Retry interval while discovery fails; requests get `503` meanwhile |
+| `REQUIRED_SCOPE` | `telemetry:write` | Must appear in `scope` (or `scp`) |
+| `CLOCK_SKEW` | `60s` | Tolerance on `exp`, `nbf` and `iat` |
+| `REJECTION_LOG_INTERVAL` | `60s` | At most one warning per refusal reason per interval |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | **required** | Upstream OTLP/gRPC endpoint, e.g. `http://collector:4317` |
 | `LISTEN_ADDR` | `0.0.0.0:4318` | The one listener: TLS, OTLP/gRPC and OTLP/HTTP on the same port |
 | `TLS_CERT_FILE` | `/etc/otlp-collector-oidc/tls/cert.pem` | Server certificate; the embedded self-signed one unless overridden |
@@ -58,7 +70,9 @@ same port.
 | `BATCH_TIMEOUT` | `5s` | Longest a record waits in the batcher |
 | `HEALTH_ADDR` | `127.0.0.1:13133` | Liveness endpoint |
 
-To replace the pipeline entirely, mount a collector configuration over
+Required claims are `sub` and `preferred_username`; `sub`, `preferred_username`,
+`email` and `name` become `user.id`, `user.name`, `user.email` and `user.full_name` in
+the request's auth context. To replace the pipeline entirely, mount a collector configuration over
 `/etc/otlp-collector-oidc/collector.yaml`; the custom components remain available to it.
 
 ## Deploy
@@ -78,16 +92,22 @@ runtime user (uid 10001) must be able to read a mounted pair.
 ## Observability
 
 - **Health:** `http://127.0.0.1:13133/` answers while the process and its pipelines
-  run; the image `HEALTHCHECK` probes it. It never checks the upstream, so an upstream
-  outage does not restart the container and discard the queue that exists to ride it
-  out.
+  run; the image `HEALTHCHECK` probes it. It never checks the upstream or the identity
+  provider, so an outage of either does not restart the container: an upstream outage
+  is ridden out by the queue, a provider unreachable at start by answering `503`
+  until discovery succeeds.
 - **Metrics:** Prometheus on `:8888/metrics` — `otelcol_receiver_accepted_*` and
   `otelcol_receiver_refused_*` per transport (`grpc`, `http`);
   `otelcol_otlpsingleport_requests_refused` for requests refused before the
   pipeline, by `transport` and `reason` (`method`, `media_type`, `body_too_large`,
-  `decode`, `unknown_path`, `decompress`); and
-  `otelcol_exporter_send_failed_*` and `otelcol_exporter_queue_size` for upstream health.
-- **Logs:** stdout.
+  `decode`, `unknown_path`, `decompress`);
+  `otelcol_oidcclientauth_rejections` for requests the authenticator refused, by
+  `reason` (`no_token`, `invalid_token`, `missing_scope`, `missing_claim`,
+  `not_ready`); and `otelcol_exporter_send_failed_*` and `otelcol_exporter_queue_size`
+  for upstream health.
+- **Logs:** stdout. A refusal logs one warning per reason per
+  `REJECTION_LOG_INTERVAL`, with `reason` as a field and the count it suppressed;
+  never the token.
 
 ## Development
 
@@ -110,11 +130,11 @@ unit and integration tiers, and the `test-reports` artifact holds the JUnit file
 
 ## Status
 
-Pre-release (`0.x`): single-port OTLP/gRPC and OTLP/HTTP over TLS, forwarding traces and
-logs to a plaintext gRPC upstream. **OIDC authentication is not implemented yet**, so
-this version accepts any client and must not face untrusted ones; identity stamping,
-the metrics pipeline, upstream TLS and headers, and its own logs upstream follow —
-[board](https://bored.desync.link/boards/otlp-collector-oidc).
+Pre-release (`0.x`): single-port OTLP/gRPC and OTLP/HTTP over TLS, every request
+authenticated with an OIDC access token, forwarding traces and logs to a plaintext
+gRPC upstream. The identity is validated but not yet stamped onto the telemetry;
+identity stamping, the metrics pipeline, upstream TLS and headers, and its own logs
+upstream follow — [board](https://bored.desync.link/boards/otlp-collector-oidc).
 
 ## Licence
 

@@ -3,6 +3,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"maps"
 	"net/http"
 	"os/exec"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -23,32 +25,41 @@ import (
 const eventually = 20 * time.Second
 
 // shipped is the image's environment shape: the shipped configuration, TLS
-// with a test certificate, and an upstream that answers OK.
+// with a test certificate, an OIDC issuer, and an upstream that answers OK.
+// Its clients present a valid token.
 type shipped struct {
 	collector *harness.Collector
 	sink      *harness.Sink
+	issuer    *harness.Issuer
 	clients   clients
 }
 
-func startShipped(t *testing.T) shipped {
+func startShipped(t *testing.T, env map[string]string) shipped {
 	t.Helper()
 	cert := harness.NewCertificate(t)
 	sink := harness.NewSink(t)
-	c := harness.Start(t, binary, harness.Options{Env: map[string]string{
+	iss := harness.NewIssuer(t)
+	iss.Start(t)
+	vars := oidcEnv(iss)
+	maps.Copy(vars, map[string]string{
 		"TLS_CERT_FILE":               cert.CertFile,
 		"TLS_KEY_FILE":                cert.KeyFile,
 		"OTEL_EXPORTER_OTLP_ENDPOINT": sink.Endpoint(),
 		// Short, so data reaches the sink quickly; the default is 5s.
 		"BATCH_TIMEOUT": "50ms",
-	}})
-	return shipped{collector: c, sink: sink, clients: newClients(t, c.ListenAddr, cert.Pool)}
+	})
+	maps.Copy(vars, env)
+	c := harness.Start(t, binary, harness.Options{Env: vars})
+	cl := newClients(t, c.ListenAddr, cert.Pool, iss.Sign(t, jose.RS256, iss.Claims()))
+	awaitReady(t, cl)
+	return shipped{collector: c, sink: sink, issuer: iss, clients: cl}
 }
 
 // TestShipped runs every scenario of the shipped shape against one process.
 // Scenarios that only read run in parallel; the ones that read counters or
 // take the upstream down run after them, one at a time.
 func TestShipped(t *testing.T) {
-	env := startShipped(t)
+	env := startShipped(t, nil)
 
 	t.Run("parallel", func(t *testing.T) {
 		t.Run("dispatch", dispatchScenarios(env))
