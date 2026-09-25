@@ -132,8 +132,22 @@ Built only on public collector and `pdata` APIs; not a fork of the stock receive
 - **Decoding is `pdata`'s, not ours:** `ptraceotlp.ExportRequest.UnmarshalProto/JSON`
   and the logs/metrics equivalents; responses marshalled in the requested encoding.
   The gRPC services are `p*otlp.RegisterGRPCServer` with three small `Export`
-  handlers. Consumer errors map as the stock receiver's do: permanent → `400` /
-  `InvalidArgument`, otherwise `503` / `Unavailable` with a retry hint.
+  handlers. Consumer errors map exactly as the stock receiver's do: an error carrying
+  a gRPC status keeps its code — an upstream's permanent `InvalidArgument` reaches the
+  client as `400` / `InvalidArgument`, a retryable `Unavailable` as `503` /
+  `Unavailable` with the upstream's `RetryInfo` passed through as `Retry-After` — a
+  permanent error with no status is the collector's own fault (`500` / `Internal`),
+  and anything else is `503` / `Unavailable`. The shipped pipeline batches and queues,
+  so in it the client sees only the receiver's own answers; an upstream's answer
+  reaches the client only in a pipeline with neither.
+- **One cap, both protocols.** `max_request_body_size` bounds the decompressed body
+  (`413` over HTTP — the stock receiver answers `400`). Over gRPC, confighttp's cap
+  also counts the 5-byte frame header of the raw stream, so the gRPC server's
+  `MaxRecvMsgSize` is the cap less 5: a gRPC message may be 5 bytes smaller than an
+  HTTP body, and every oversized one is `ResourceExhausted`.
+- **One listener, shared.** Every pipeline naming the receiver's configuration gets
+  the same instance; a signal with no pipeline has no route, so it answers `404` over
+  HTTP and `Unimplemented` over gRPC.
 - **The error handler is where any status other than 401 for an authenticator error
   comes from.** `confighttp.WithErrorHandler` is consulted by the auth interceptor
   and the decompressor alike; this receiver's handler answers `503` with `Retry-After`
@@ -142,7 +156,12 @@ Built only on public collector and `pdata` APIs; not a fork of the stock receive
   bad or oversized body. The handler sees only the error text, so the not-ready error
   is a fixed string the extension and the receiver share as a constant.
 - **Own telemetry:** the standard `receiver_accepted_*` / `receiver_refused_*` via
-  `receiverhelper`, so dashboards built for stock receivers read this one unchanged.
+  `receiverhelper`, so dashboards built for stock receivers read this one unchanged,
+  and `otlpsingleport_requests_refused{transport, reason}` for every request refused
+  before the pipeline — which the stock receiver does not count. `reason` is a closed
+  set: `method`, `media_type`, `body_too_large`, `decode`, `unknown_path`,
+  `decompress`. Over gRPC, an RPC counts only if it failed before its handler ran; a
+  failure the pipeline returns is `receiver_refused_*`.
 
 **Why the receiver is ours.** The stock OTLP receiver builds a `*grpc.Server` and an
 `*http.Server` and calls `net.Listen` twice (`otlpreceiver/otlp.go:117,172`), so it
@@ -214,7 +233,8 @@ All stock components, rendered from an embedded template at startup (§6).
   Rejections are counted, so a client build that ships an unregistered metric is
   visible.
 - `memory_limiter` first in every pipeline; identity is materialised from context
-  **before** `batch`, so no `metadata_keys` on the batcher; `otlp` exporter with
+  **before** `batch`, so no `metadata_keys` on the batcher; the OTLP gRPC exporter
+  (`otlp_grpc`; `otlp` is its deprecated alias from collector v0.161) with
   `sending_queue` and `retry_on_failure`.
 - `health_check` on `:13133`; own metrics on `:8888`.
 
@@ -384,10 +404,12 @@ and one for `/opentelemetry.proto.collector` (never stripped); rate limiting on 
   message; optional claims absent → no attribute; `claim_attributes` and
   `resource_attributes` land in the auth context (an empty map means no resource
   action); counter labels bounded; warnings rate-limited.
-- **Receiver unit:** dispatch (h2 + `application/grpc` → gRPC; `/v1/*` + protobuf/JSON
+- **Receiver** (integration, like everything observable from outside):
+  dispatch (h2 + `application/grpc` → gRPC; `/v1/*` + protobuf/JSON
   → HTTP; other paths 404, methods 405, content types 415); every signal in every
-  encoding, gzip and plain; permanent vs retryable consumer errors → `400` / `503`
-  and `InvalidArgument` / `Unavailable`; the error handler: the not-ready error →
+  encoding, gzip and plain; permanent vs retryable upstream errors → `400` / `503`
+  and `InvalidArgument` / `Unavailable`, observed through a pipeline with no batch or
+  queue; the error handler: the not-ready error →
   `503` with `Retry-After`, every other authenticator error → `401` with its text, a
   decompressor status passed through unchanged; the auth context is visible inside a
   gRPC handler; `receiver_accepted_*` / `refused_*` counted.
@@ -420,13 +442,26 @@ and one for `/opentelemetry.proto.collector` (never stripped); rate limiting on 
 
 ## 10. Open questions — verify while building, do not assume
 
-- `grpc.Server.ServeHTTP` is marked experimental in grpc-go: confirm on the pinned
-  version that unary `Export` calls and `grpc-encoding: gzip` behave, that the
-  interceptor's plain-text `401` and `503` reach a gRPC client as `Unauthenticated`
-  and `Unavailable`, and that `confighttp`'s decompressor (keyed on
-  `Content-Encoding`) and body-size interceptor leave gRPC frames untouched. Fallback:
-  a `cmux` on our own listener in front of a stock-style `grpc.Server` — still one
-  port.
+**Resolved** (collector v0.161.0, grpc-go v1.83.2, Go 1.27; proven by the integration
+suite, so a version bump re-proves them):
+
+- `grpc.Server.ServeHTTP` inside the `confighttp` server serves unary `Export` for
+  every signal, plain and `grpc-encoding: gzip`, byte-for-byte; the `cmux` fallback is
+  not needed. The server's `otelhttp` wrapper keeps the `http.Flusher` gRPC requires.
+- `confighttp`'s decompressor keys on `Content-Encoding` alone, which gRPC never sets,
+  so gRPC frames pass through it untouched. Its body-size interceptor does wrap the
+  gRPC request stream, bounding the raw bytes, frame header included; the gRPC
+  server's `MaxRecvMsgSize` is therefore the cap less 5, so a message one byte over
+  is `ResourceExhausted` compressed or not, rather than a stream read error.
+- grpc-go calls no stats handler for an RPC to an unregistered service, so the
+  receiver's unknown-service handler answers `Unimplemented` and counts it itself.
+- HTTP/1.1 with `Content-Type: application/grpc` is not gRPC: it is dispatched as
+  OTLP/HTTP and answers `404` on a gRPC path.
+
+**Open:**
+
+- The interceptor's plain-text `401` and `503` reach a gRPC client as
+  `Unauthenticated` and `Unavailable` — with the authenticator.
 - `client.FromContext(ctx).Auth` inside the gRPC handlers carries the extension's
   auth data when reached via `ServeHTTP`.
 - The `attributes` processor skips an action whose `from_context` key is absent

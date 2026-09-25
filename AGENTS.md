@@ -22,21 +22,25 @@ Cross-repo rules change in `agent-shared`, not here.
 | **Trunk** | `main` |
 | **Kanban board** | `https://bored.desync.link/boards/otlp-collector-oidc` |
 | **Phase** | pre-MVP `0.N.P` — iteration 1 starts at `0.1.0` |
-| **CI** | **GitHub Actions**, not Woodpecker — baseline §4's GitHub-native path applies: poll `gh api repos/vcheesbrough/otlp-collector-oidc/commits/$SHA/status --jq '.state'` |
-| **Image** | `ghcr.io/vcheesbrough/otlp-collector-oidc` (multi-arch, published by `release.yml` on `v*` tags; `main` → `:edge`) |
+| **CI** | **GitHub Actions**, not Woodpecker — baseline §4's GitHub-native path applies, but Actions reports **check runs**, not commit statuses: watch `gh pr checks <PR> --watch`, or read `gh api repos/vcheesbrough/otlp-collector-oidc/commits/$SHA/check-runs --jq '.check_runs[] \| [.name, .status, .conclusion]'`. Workflows: `ci.yml` (Lint, Test, Image, Badges on `main`), `release.yml` |
+| **Image** | `ghcr.io/vcheesbrough/otlp-collector-oidc` (multi-arch, published by `release.yml` only after CI passes on the same commit: `v*` tags → exact version, `main` → `:edge`) |
 | **Language** | Go — a custom OpenTelemetry Collector distribution built with `ocb` |
 
 Shared skills apply here once the machine is wired up (`start-iteration`,
 `ci-watch`, `pr-review-loop`). Their per-repo parameters:
 
 - `OWNER=vcheesbrough`, `REPO=otlp-collector-oidc`
-- CI reproduce commands: `go test ./...`, `ocb --config builder.yaml`, and the
-  integration suite `go test ./integration` (once they exist — see status below)
+- CI reproduce commands: `make lint`, `make vet`, `make vuln`, `make test`,
+  `make integration` (`go test ./integration`), `make generate-check`,
+  `make versions-check`, `make docs-check`, `make build`, and
+  `make image && scripts/image-smoke.sh ghcr.io/vcheesbrough/otlp-collector-oidc:dev "$(scripts/version.sh)"`
 - Extra review criteria beyond the baseline five (correctness, security/OWASP, tests,
   versioning, scope): every change to `extension/` or `receiver/` is on the trust
   boundary — the reviewer checks that no client-supplied value can reach a metric
   label, that every refusal names its reason and is counted, and that nothing in the
-  metrics pipeline references an `auth.` identity key.
+  metrics pipeline references an `auth.` identity key. The reviewer also checks that
+  the card's **SOLID section is honoured** (or the deviation is written on the card),
+  the diff against the Go standards below, and that the **Definition of Done** is met.
 
 ---
 
@@ -58,9 +62,123 @@ Baseline §2 unchanged: the workspace version is the Go module's release tag
 over OTLP and its own metrics on `:8888`, ships a dashboard for them, and is never
 in a health gate.
 
-### Status
+### Integration tests are the primary tier
 
-Design stage. The repository holds the licence, the design and its decision record;
-no code, build or CI exists yet. The first iteration scaffolds the module and proves
-the single-port receiver (`docs/DESIGN.md` §10, first item) before anything depends
-on it.
+They carry the majority of coverage. The system under test is the built binary as a
+subprocess, driven from outside over HTTP and gRPC on its one port, observed at fake
+sinks, on `:8888`, on the health endpoint and on its output (`integration/harness`).
+Every behaviour a card adds lands as scenarios in `integration/`, run over **both**
+protocols. Unit tests are written only for what cannot be driven or observed from
+outside the process, and each such test says why. Renderer golden files are a fast
+secondary check, never the acceptance. This overrides baseline §6's "lowest
+responsible layer" for this repo. The suite's budget is **five minutes** on a
+GitHub-hosted runner; exceeding it is a finding to fix (one subprocess per
+environment shape, parallel scenarios), not a limit to raise.
+
+### The README is a product surface
+
+It is public-facing and its quality matters as much as the software's: terse,
+professional, no design-stage chatter, no internal process. Every card that changes
+behaviour updates it in the same PR, keeping its structure — title and tagline; badge
+row; what it does, what it refuses, what it assumes nothing about; Quick start;
+Configuration; Deploy; Observability; Development; Status; Licence. The structure
+changes only with a reason recorded on the card. Badges stay green on `main`; a red
+badge is an incident, not a backlog item.
+
+### SOLID is evaluated per card
+
+Every card carries a `## SOLID` section stating how the code it adds is split and
+what it depends on. The PR self-review evaluates the diff against that section and
+the standards below; a deviation is recorded on the card, not left silent.
+
+### Definition of Done
+
+A card's PR is ready to merge only when all of these hold, and the self-review checks
+each: every behaviour the card adds has integration scenarios over both protocols;
+the README section it touches is updated in place; `docs/configuration.md` is
+regenerated if a variable changed (until the renderer exists, `make docs-check` holds
+the README table to `config/collector.yaml`); the observability decision is recorded
+on the card, naming the panel, alert and runbook entry added or "none" with a reason;
+the card's SOLID section is honoured or the deviation is written on the card;
+DESIGN.md is updated where behaviour or a §10 finding changed; CI is green and the
+badges on `main` will stay green; the card body matches what was built.
+
+## Go standards
+
+**Sources, in precedence order:** the OpenTelemetry Collector coding guidelines
+(component shape), the Google Go Style Guide and its Best Practices, the Uber Go Style
+Guide where Google is silent, and Go Code Review Comments and Effective Go as the
+baseline everyone assumes. CI enforces what a tool can; review enforces the rest.
+
+- **Layout.** `receiver/otlpsingleport`, `extension/oidcclientauth`, `internal/render`
+  (environment → config), `internal/upstream` (the `OTEL_EXPORTER_OTLP_*` resolver),
+  `internal/build` (version from ldflags), `integration/` (with the harness in
+  `integration/harness`), `cmd/otlp-collector-oidc` (our `main` plus ocb's generated
+  `components.go`), `config/collector.yaml` (the shipped pipeline). One Go module.
+  Package names are short, lower-case, and say what they provide; no `util`,
+  `common`, `helpers`. A `doc.go` per package with the package comment.
+- **Collector component conventions.** `factory.go` + `config.go` per component;
+  `createDefaultConfig` returns every default and `Config.Validate()` fails fast on
+  anything invalid; `metadata.yaml` with `mdatagen` generating `internal/metadata`
+  (type, stability, and **every custom metric**, emitted through the generated
+  `TelemetryBuilder`); `Config` suffix for YAML-facing structs, `Settings` for
+  code-facing ones, no embedded config structs; enumerations are typed with the type
+  name as the constant prefix; never `os.Exit` or `log.Fatal` outside `main`; never
+  crash after startup and never on bad input (log, count, refuse); every queue and
+  cache bounded; `Shutdown` stops accepting, cancels background work, honours its
+  context.
+- **Logging.** Product code logs only through the `*zap.Logger` handed in via
+  `component.TelemetrySettings`; `fmt.Print*`, `log.*`, `println` and `os.Exit` are
+  banned outside `main` and tests by `forbidigo`, so every line the process writes
+  goes through the one path the own-logs work exports upstream.
+- **Errors.** Wrap with `fmt.Errorf("<context>: %w", err)`; sentinels exported as
+  `ErrXxx`, error types as `XxxError`; error strings lower-case, no trailing
+  punctuation; handle an error once (log or return, never both); client faults become
+  `consumererror.NewPermanent`; no `panic` outside programming errors at construction.
+- **Interfaces and dependencies.** Define interfaces where they are consumed, keep
+  them small, accept interfaces and return concrete types; assert compliance at
+  compile time (`var _ extensionauth.Server = (*authenticator)(nil)`); inject clocks,
+  HTTP clients and key sets; no package-level mutable state (the one exception is the
+  linker-set version in `internal/build`); no `init()`.
+- **Concurrency.** Every goroutine has an owner and an exit path (`context`,
+  `errgroup`, or a server's `Stop`), never fire-and-forget; mutexes are value fields
+  next to what they guard; `context.Context` is the first parameter wherever work can
+  be cancelled.
+- **Enumerations are exhaustive.** Any label value, reason, mode or protocol is a
+  typed enum switched with the `exhaustive` linter on, so adding a variant fails the
+  build until it is handled. This is how the bounded-label rule is enforced in code.
+- **Formatting and linting, CI-gated.** `gofumpt` and `gci` (stdlib, third-party,
+  module) as golangci-lint v2 formatters; `.golangci.yml` is `version: "2"`,
+  `default: standard` plus the linters it lists; `go vet` and `govulncheck` in CI;
+  every `nolint` directive names its linter and gives a reason. The Go version is
+  pinned by the `go` and `toolchain` directives; Dependabot runs weekly for `gomod`
+  and `github-actions`.
+- **Versions move together.** The collector core, contrib, `ocb` and `mdatagen`
+  versions in `builder.yaml` and `go.mod` are one release line, bumped in lockstep in
+  a single PR, never individually (`make versions-check`; Dependabot ignores them).
+  `components.go` and every `internal/metadata` are regenerated in that PR
+  (`make generate`; CI's `generate-check` fails on drift).
+- **Version identity.** There is no version file. The workspace version is the git
+  tag (`v0.N.P`); `scripts/version.sh` derives it and the Makefile, Dockerfile and
+  workflows link it into `internal/build`. A tagged commit reports `0.N.P`; any other
+  commit reports the next minor, `0.(N+1).0-dev+<sha>` (before the first tag,
+  `0.1.0-dev+<sha>`), and the `:edge` image carries that. `:latest` is published only
+  from `v1.0.0` onwards; before that, only `:edge` and exact version tags exist.
+- **Testing.** `testify` `require`/`assert`; table-driven with named struct fields;
+  `t.Helper()` in helpers; `t.Parallel()` where the subprocess allows; no sleeps,
+  `require.Eventually` for anything asynchronous; failures print expected, actual and
+  the input. **No private key, certificate or token is ever committed**, test ones
+  included: the harness generates ephemeral keys and certificates at run time, the
+  image generates its own at build, and CI fails on any tracked PEM block.
+- **Documentation.** Every exported name has a doc comment that starts with the name;
+  comments say why, not what; configuration is documented from one source, never by
+  hand twice.
+- **Security.** Tokens, keys and headers never appear in logs, errors, spans or test
+  output; `gosec` on; `crypto/rand` only.
+
+## Status
+
+Pre-release. Iteration 1 (`0.1.0`) delivers the module, the single-port receiver, the shipped
+pipeline for traces and logs, the image, CI with its test report and badges, and the
+integration harness. Authentication is the next card; nothing may face untrusted
+clients until it lands.

@@ -1,0 +1,28 @@
+display_name: OTLP single-port receiver
+type: otlpsingleport
+github_project: vcheesbrough/otlp-collector-oidc
+
+status:
+  class: receiver
+  stability:
+    development: [traces, logs, metrics]
+  disable_codecov_badge: true
+
+telemetry:
+  metrics:
+    otlpsingleport_requests_refused:
+      enabled: true
+      stability: development
+      description: >-
+        Requests refused before they reach the pipeline, by transport (grpc,
+        http) and reason (method, media_type, body_too_large, decode,
+        unknown_path, decompress). Refusals by the pipeline itself are
+        receiver_refused_*.
+      unit: "{request}"
+      sum:
+        value_type: int
+        monotonic: true
+
+tests:
+  config:
+    endpoint: localhost:0

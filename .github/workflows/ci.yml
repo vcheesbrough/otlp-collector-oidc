@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOLANGCI_LINT_VERSION: v2.14.0
+  GOTESTSUM: go run gotest.tools/gotestsum@v1.13.0
+  MODULE: github.com/vcheesbrough/otlp-collector-oidc
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          install-only: true
+      # Each gate is its own step and all of them run, so one red run names
+      # every failure rather than the first.
+      - name: Formatting (gofumpt, gci)
+        run: golangci-lint fmt --diff
+      - name: golangci-lint
+        if: ${{ !cancelled() }}
+        run: golangci-lint run
+      - name: go vet
+        if: ${{ !cancelled() }}
+        run: make vet
+      - name: govulncheck
+        if: ${{ !cancelled() }}
+        run: make vuln
+      - name: Generated code is current (mdatagen, ocb)
+        if: ${{ !cancelled() }}
+        run: make generate-check
+      - name: Collector versions move together
+        if: ${{ !cancelled() }}
+        run: make versions-check
+      - name: Configuration is documented
+        if: ${{ !cancelled() }}
+        run: make docs-check
+      - name: No key material in the repository
+        if: ${{ !cancelled() }}
+        run: scripts/no-key-material.sh
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    outputs:
+      passed: ${{ steps.counts.outputs.passed }}
+      coverage: ${{ steps.coverage.outputs.percent }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags: the version is computed from them
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build (ocb components, ldflags version)
+        run: |
+          make build
+          bin/otlp-collector-oidc version
+      - name: Unit tests
+        run: |
+          mkdir -p reports coverage/unit
+          $GOTESTSUM --junitfile reports/unit.xml --jsonfile reports/unit.json -- \
+            -cover -coverpkg="$MODULE/..." $(go list ./... | grep -v /integration) \
+            -args -test.gocoverdir="$PWD/coverage/unit"
+      - name: Integration tests (5-minute budget)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        env:
+          OTLP_COLLECTOR_OIDC_COVERDIR: ${{ github.workspace }}/coverage/integration
+        run: |
+          $GOTESTSUM --junitfile reports/integration.xml --jsonfile reports/integration.json -- \
+            -count=1 -timeout 5m ./integration
+      - name: Test report
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: dorny/test-reporter@v3
+        with:
+          name: Test report
+          path: reports/*.xml
+          reporter: java-junit
+          list-tests: failed
+          # A check run with counts and per-test detail; the job summary
+          # below carries the same counts.
+          use-actions-summary: false
+      - name: Count passed tests
+        id: counts
+        if: ${{ !cancelled() }}
+        run: |
+          count() { jq -s --arg a "$1" '[.[] | select(.Action == $a and .Test != null)] | length' reports/*.json; }
+          passed=$(count pass) failed=$(count fail) skipped=$(count skip)
+          echo "passed=$passed" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Tests"
+            echo
+            echo "| Passed | Failed | Skipped |"
+            echo "| ---: | ---: | ---: |"
+            echo "| $passed | $failed | $skipped |"
+            if [ "$failed" -gt 0 ]; then
+              echo
+              echo "Failed:"
+              jq -rs '.[] | select(.Action == "fail" and .Test != null) | "- `\(.Package | sub(".*/"; ""))`: `\(.Test)`"' reports/*.json
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Coverage (unit + integration)
+        id: coverage
+        if: ${{ !cancelled() }}
+        run: |
+          dirs=$(ls -d coverage/unit coverage/integration 2>/dev/null | paste -sd, -)
+          go tool covdata textfmt -i="$dirs" -o coverage/coverage.out
+          percent=$(go tool cover -func=coverage/coverage.out | awk '/^total:/ {sub("%", "", $3); print $3}')
+          echo "percent=$percent" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Coverage"
+            echo
+            echo "Unit and integration tiers merged: **${percent}%** of statements."
+            echo
+            echo '```'
+            go tool covdata percent -i="$dirs"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: test-reports
+          path: |
+            reports/
+            coverage/coverage.out
+
+  image:
+    name: Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Version
+        id: version
+        run: echo "version=$(scripts/version.sh)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: otlp-collector-oidc:ci
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test
+        run: scripts/image-smoke.sh otlp-collector-oidc:ci "${{ steps.version.outputs.version }}"
+
+  badges:
+    name: Badges
+    needs: [lint, test, image]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    env:
+      GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+      GIST_ID: ${{ vars.GIST_ID }}
+    steps:
+      - name: Tests badge
+        if: ${{ env.GIST_TOKEN != '' && env.GIST_ID != '' }}
+        uses: schneegans/dynamic-badges-action@v1.9.0
+        with:
+          auth: ${{ env.GIST_TOKEN }}
+          gistID: ${{ env.GIST_ID }}
+          filename: otlp-collector-oidc-tests.json
+          label: tests
+          message: ${{ needs.test.outputs.passed }} passed
+          color: brightgreen
+      - name: Coverage badge
+        if: ${{ env.GIST_TOKEN != '' && env.GIST_ID != '' }}
+        uses: schneegans/dynamic-badges-action@v1.9.0
+        with:
+          auth: ${{ env.GIST_TOKEN }}
+          gistID: ${{ env.GIST_ID }}
+          filename: otlp-collector-oidc-coverage.json
+          label: coverage
+          message: ${{ needs.test.outputs.coverage }}%
+          valColorRange: ${{ needs.test.outputs.coverage }}
+          minColorRange: 50
+          maxColorRange: 90

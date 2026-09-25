@@ -1,0 +1,28 @@
+# OpenTelemetry Collector Builder manifest. It pins one collector release:
+# core, contrib and ocb move together, in one PR, and go.mod follows.
+# `make generate` runs ocb to produce cmd/otlp-collector-oidc/components.go;
+# the binary itself is our own main in that package, built by `go build`.
+dist:
+  name: otlp-collector-oidc
+  description: OpenTelemetry Collector distribution that authenticates OTLP clients with OIDC
+  output_path: ./_build
+
+receivers:
+  - gomod: github.com/vcheesbrough/otlp-collector-oidc v0.0.0
+    import: github.com/vcheesbrough/otlp-collector-oidc/receiver/otlpsingleport
+    path: ./
+
+processors:
+  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.161.0
+  - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.161.0
+
+exporters:
+  - gomod: go.opentelemetry.io/collector/exporter/otlpexporter v0.161.0
+
+extensions:
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.161.0
+
+providers:
+  - gomod: go.opentelemetry.io/collector/confmap/provider/envprovider v1.67.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.67.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.67.0
