@@ -24,7 +24,9 @@ the product are fixed by which deployment answered.
 ## Identity provider
 
 authentik, one OAuth2/OpenID provider per product with a `telemetry:write` scope
-mapping; see `docs/providers/authentik.md`. The collector's `OIDC_AUDIENCE` is that
+mapping, applied from the blueprint in
+[`docs/providers/authentik/`](providers/authentik/otlp-collector-oidc.yaml) with one
+instance per product environment; see [the guide](providers/authentik.md). The collector's `OIDC_AUDIENCE` is that
 provider's client id; `OIDC_ISSUER_URL` is the application slug URL.
 
 ## Configuration delivery

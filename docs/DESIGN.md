@@ -535,6 +535,12 @@ suite, so a version bump re-proves them):
   HTTP alike — carries the auth data the interceptor set: grpc-go's handler transport
   derives the stream context from the request's (a receiver unit test until the
   pipeline reads the auth context).
+- authentik 2026.8.3 (`docs/providers/authentik.md`, verified end to end against a
+  fresh instance): a provider without `signing_key` issues an HS256 access token, which
+  the profile refuses as `unsupported alg`; the access token carries `scope` as a
+  space-delimited string and `preferred_username`, `email` and `name` from the
+  `profile` / `email` scopes; the `hashed_user_id` `sub` is unchanged by a rename, a
+  validity change and a signing-key change.
 - The `attributes` processor skips an upsert whose `from_context` key is absent
   (`coreinternal/attraction`, v0.161.0), so an optional claim needs no empty default;
   a delete before each upsert removes a client's forged value.
@@ -556,6 +562,3 @@ suite, so a version bump re-proves them):
 
 - OTTL `Now() + Duration(...)` arithmetic in the pinned version.
 - `deltatocumulative` covers histograms and exponential histograms, not only sums.
-- authentik: a provider without `signing_key` issues a non-RS or opaque token; `scope`
-  on the access token is space-delimited; `hashed_user_id` `sub` is stable across
-  provider edits other than `sub_mode`.
