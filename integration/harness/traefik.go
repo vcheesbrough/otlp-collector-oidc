@@ -73,7 +73,7 @@ func StartTraefik(t *testing.T, backend, prefix string) *Traefik {
 	client := &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{RootCAs: tr.cert.Pool, MinVersion: tls.VersionTLS12},
 	}}
-	require.Eventually(t, func() bool {
+	routed := func() bool {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, tr.BaseURL()+SignalTraces.Path(), http.NoBody)
 		if err != nil {
 			return false
@@ -84,7 +84,15 @@ func StartTraefik(t *testing.T, backend, prefix string) *Traefik {
 		}
 		_ = resp.Body.Close()
 		return resp.StatusCode != http.StatusNotFound && resp.StatusCode < 500
-	}, 60*time.Second, 100*time.Millisecond, "Traefik never routed to the collector:\n%s", logs(t, name))
+	}
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for deadline := time.Now().Add(60 * time.Second); !routed(); <-tick.C {
+		if time.Now().After(deadline) {
+			// The logs are read now, when they say why.
+			require.FailNow(t, "Traefik never routed to the collector", "%s", logs(t, name))
+		}
+	}
 	return tr
 }
 

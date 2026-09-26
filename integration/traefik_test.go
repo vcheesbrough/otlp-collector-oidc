@@ -21,8 +21,8 @@ import (
 // via is env with clients that reach its collector through f.
 func (env shipped) via(t *testing.T, f harness.Frontend) shipped {
 	t.Helper()
+	// pool stays the collector's: it is for clients built to its listener.
 	env.clients = newClientsVia(t, f, env.issuer.Sign(t, jose.RS256, env.issuer.Claims()))
-	env.pool = f.Pool()
 	return env
 }
 
@@ -46,9 +46,14 @@ func TestBehindTraefik(t *testing.T) {
 				}
 			})
 			t.Run("only the OTLP paths are routed", func(t *testing.T) {
+				// The collector counts every unknown path it answers; the
+				// proxy's own 404 leaves the count where it was.
+				unknown := map[string]string{"transport": "http", "reason": "unknown_path"}
+				before := scrape(t, env.collector).Sum("otelcol_otlpsingleport_requests_refused", unknown)
 				resp, err := env.clients.http.Do(t.Context(), http.MethodPost, "/elsewhere", nil, nil)
 				require.NoError(t, err)
 				assert.Equal(t, http.StatusNotFound, resp.Status, "%s", resp.Body)
+				assert.InDelta(t, before, scrape(t, env.collector).Sum("otelcol_otlpsingleport_requests_refused", unknown), 0, "the collector answered an unrouted path")
 			})
 			t.Run("fidelity", fidelityScenarios(env))
 			t.Run("token profile", func(t *testing.T) { tokenProfile(t, env) })
