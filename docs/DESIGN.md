@@ -585,6 +585,6 @@ suite, so a version bump re-proves them):
   keeps them for its `${env:...}`. With no trace processors, the collector emits no
   self-traces and reads no trace exporter variables.
 
-**Open:** none at `1.0.0`. The validated-token cache (ADR-0001's performance lever)
+**Open:** none as of iteration 12's sign-off. The validated-token cache (ADR-0001's performance lever)
 is post-MVP work, taken up only once measured.
 

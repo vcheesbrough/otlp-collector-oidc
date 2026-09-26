@@ -198,10 +198,11 @@ rendered from the environment by `run`). One Go module.
 
 ## Status
 
-MVP reached with iteration 12 (`0.12.0`, then `1.0.0`, the maintainer's hand-cut
-tag): the observability sign-off, the standards pass, the image's licences and
-notices; DESIGN §10 has nothing open. Post-MVP iterations are `1.N.0`, N continuing
-from 13. Iteration 13 (`1.13.0`) completes the image's OCI labels (`created` from the
+Pre-MVP (`0.x`). Iteration 12 (`0.12.0`) did the MVP sign-off work — the
+observability sign-off, the standards pass, the image's licences and notices;
+DESIGN §10 has nothing open — but the maintainer chose not to cut `1.0.0` then: it
+remains a later, deliberate step (push `v1.0.0` on a released commit, see
+"Versioning"). Iteration 13 (`0.13.0`) completes the image's OCI labels (`created` from the
 commit time, `base.name`) and annotates the release's multi-arch index with them,
 which `scripts/oci-labels-check.sh` keeps equal to the Dockerfile's.
 
@@ -243,7 +244,7 @@ own — the request path is the stock receiver and processors, whose spans would
 describe the collector's internals rather than anything an operator acts on. Its logs
 are the one self-signal it pushes, as OTLP, to the logs upstream.
 
-**Further deviations recorded at the `1.0.0` sign-off (card #435):**
+**Further deviations recorded at the MVP sign-off (card #435, iteration 12):**
 `OTEL_EXPORTER_OTLP_ENDPOINT` is required, not optional telemetry, because forwarding
 is the product's function (§1.8's "absent is off" does not apply to it; `LOG_OUTPUT`
 turns the own-logs export off instead); what `filter` drops after the client's `200` is
