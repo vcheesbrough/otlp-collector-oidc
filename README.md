@@ -78,7 +78,9 @@ The upstream follows the SDK's semantics, with one deviation recorded in the
 [design](docs/DESIGN.md#62-reference): `grpc` or `http/protobuf`, headers, timeout
 in milliseconds, compression, a CA and a client certificate for mTLS, each with
 `_TRACES_`, `_LOGS_` and `_METRICS_` forms that take precedence for that signal.
-Signals that resolve to the same upstream share one exporter.
+Signals that resolve to the same upstream share one exporter. The process's own logs
+always verify the logs upstream's certificate, so `UPSTREAM_TLS_INSECURE_SKIP_VERIFY`
+with a TLS logs upstream needs `LOG_OUTPUT=stdout`, and startup says so.
 
 The image runs `otlp-collector-oidc run`, which renders the pipeline from the
 environment into `/tmp/otlp-collector-oidc.yaml` and starts on it; `LOG_LEVEL=debug`

@@ -93,6 +93,8 @@ func TestUpstreamHTTP(t *testing.T) {
 		"UPSTREAM_RETRY_MAX_ELAPSED": "2s",
 	}, nil)
 	deliver(t, env, "http", sink, sink)
+	// Own logs over TLS, trusted by the same CA, at the base path + /v1/logs.
+	awaitOwnLog(t, sink, ownService, renderedLine)
 
 	paths := map[string]bool{}
 	for _, req := range sink.Received().Requests {
@@ -122,6 +124,10 @@ func TestUpstreamTLSVariables(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_LOGS_INSECURE":      "true",
 	}, nil)
 	deliver(t, env, "tls-variables", traces, logs)
+	// Own logs follow the plaintext LOGS override too: the base CA and client
+	// certificate, which the SDK would read from the environment itself,
+	// must not turn them into TLS.
+	awaitOwnLog(t, logs, ownService, renderedLine)
 }
 
 // TestUpstreamInheritedInsecure sets OTEL_EXPORTER_OTLP_INSECURE=true for
@@ -140,6 +146,7 @@ func TestUpstreamInheritedInsecure(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE": cert.CertFile,
 	}, nil)
 	deliver(t, env, "inherited-insecure", traces, logs)
+	awaitOwnLog(t, logs, ownService, renderedLine)
 }
 
 // TestUpstreamSkipVerify trusts nothing about the upstream's certificate and

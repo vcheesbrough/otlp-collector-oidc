@@ -53,7 +53,9 @@ func TestOwnLogs(t *testing.T) {
 	t.Parallel()
 	sink := harness.NewSink(t)
 	env := startShippedWith(t, sink, map[string]string{
-		"OTEL_RESOURCE_ATTRIBUTES": "deployment.environment.name=it%20test,service.version=9.9.9",
+		// OTEL_SERVICE_NAME, set, takes precedence over the attribute.
+		"OTEL_SERVICE_NAME":        ownService,
+		"OTEL_RESOURCE_ATTRIBUTES": "deployment.environment.name=it%20test,service.version=9.9.9,service.name=overridden",
 	}, nil)
 	refuse(t, env)
 
@@ -92,8 +94,9 @@ func TestOwnLogs(t *testing.T) {
 	assert.NotContains(t, out, ownLogsSecret)
 }
 
-// TestOwnLogsOTLPOnly follows a LOGS override to an HTTP upstream, with its
-// own service name, and writes nothing to stdout.
+// TestOwnLogsOTLPOnly follows a LOGS override to an HTTP upstream and writes
+// nothing to stdout. With OTEL_SERVICE_NAME unset, the service.name comes
+// from OTEL_RESOURCE_ATTRIBUTES, as the SDK convention has it.
 func TestOwnLogsOTLPOnly(t *testing.T) {
 	t.Parallel()
 	traces := harness.NewSink(t)
@@ -102,7 +105,7 @@ func TestOwnLogsOTLPOnly(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "http/protobuf",
 		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": logs.Endpoint() + "/otlp/v1/logs",
 		"LOG_OUTPUT":                       "otlp",
-		"OTEL_SERVICE_NAME":                "collector-it",
+		"OTEL_RESOURCE_ATTRIBUTES":         "service.name=collector-it",
 	}, nil)
 	refuse(t, env)
 
@@ -142,4 +145,19 @@ func TestOwnLogsUpstreamDown(t *testing.T) {
 		return strings.Contains(env.collector.Stdout(), refusedLine)
 	}, eventually, 20*time.Millisecond, "the refusal never reached stdout")
 	assert.Contains(t, env.collector.Stdout(), renderedLine)
+}
+
+// TestOwnLogsOTLPOnlyUpstreamDown has nowhere to send its lines but an
+// unreachable upstream: it still exits cleanly, and says on stderr that its
+// last lines were not delivered, since nothing else would.
+func TestOwnLogsOTLPOnlyUpstreamDown(t *testing.T) {
+	t.Parallel()
+	sink := harness.NewSink(t)
+	sink.SetBehaviour(t, harness.BehaviourDown)
+	env := startShippedWith(t, sink, map[string]string{"LOG_OUTPUT": "otlp"}, nil)
+	refuse(t, env)
+
+	env.collector.Stop(t)
+	assert.Contains(t, env.collector.Stderr(), "Own logs not delivered at shutdown")
+	assert.Empty(t, strings.TrimSpace(env.collector.Stdout()), "LOG_OUTPUT=otlp writes nothing to stdout")
 }

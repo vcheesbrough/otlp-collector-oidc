@@ -97,7 +97,7 @@ service:
     # The process's own identity, on its logs and on target_info at :8888.
     # service.version is the build's, which the collector adds itself.
     resource:
-      "service.name": {{ q .Own.ServiceName }}
+      "service.name": {{ with .Own.ServiceName }}{{ q . }}{{ else }}{{ q $.FallbackServiceName }}{{ end }}
 {{- with .InstanceID }}
       "service.instance.id": {{ q . }}
 {{- end }}

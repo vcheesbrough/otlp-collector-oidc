@@ -119,7 +119,9 @@ func run(ctx context.Context, set otelcol.CollectorSettings, lookup Lookup, unse
 			// The collector ran and stopped; only its last own lines could
 			// not reach an unreachable upstream. Not a failure of the
 			// process, and stdout has them unless LOG_OUTPUT=otlp.
-			logger.Warn("Own logs not delivered at shutdown: the logs upstream is unreachable", zap.Error(err))
+			// Always on stderr: with LOG_OUTPUT=otlp the usual logger would
+			// send this only to the upstream it is about.
+			stderrLogger(logs).Warn("Own logs not delivered at shutdown: the logs upstream is unreachable", zap.Error(err))
 			return nil
 		}
 		return fmt.Errorf("running the collector: %w", err)
@@ -136,7 +138,9 @@ func sdkVariables() []string {
 // ownLogsUndelivered reports whether err is the collector's shutdown failing
 // only to flush its own logs, after it had run: every failure it joins is
 // the service's logger. The collector marks each failure by its text alone,
-// hence the prefixes.
+// hence the prefixes, from otelcol/collector.go (shutdown) and
+// service/service.go (Shutdown) at v0.161.0; a lockstep bump re-checks them,
+// and TestOwnLogsUpstreamDown fails if they change.
 func ownLogsUndelivered(col *otelcol.Collector, err error) bool {
 	return col.GetState() == otelcol.StateClosed && onlyLoggerShutdown(err)
 }
@@ -154,7 +158,7 @@ func onlyLoggerShutdown(err error) bool {
 	switch {
 	case strings.HasPrefix(msg, "failed to shutdown logger: "):
 		return true
-	case strings.HasPrefix(msg, "failed to shutdown service after error: "), strings.HasPrefix(msg, "running the collector: "):
+	case strings.HasPrefix(msg, "failed to shutdown service after error: "):
 		if inner := errors.Unwrap(err); inner != nil {
 			return onlyLoggerShutdown(inner)
 		}
@@ -267,11 +271,27 @@ func newLogger(ctx context.Context, s LogSettings, own *Settings) (*zap.Logger, 
 		// The collector's own shutdown has the same bound on its exporter.
 		flush, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
-		_ = sdk.Shutdown(flush)
+		if err := sdk.Shutdown(flush); err != nil {
+			stderrLogger(s).Warn("The run command's own lines not delivered at exit", zap.Error(err))
+		}
 	}, nil
 }
 
+// stderrLogger is the command's logger on stderr alone, for what must be seen
+// whatever LOG_OUTPUT says. Built on demand; a build failure yields a no-op.
+func stderrLogger(s LogSettings) *zap.Logger {
+	logger, err := buildLogger(s, "stderr")
+	if err != nil {
+		return zap.NewNop()
+	}
+	return logger
+}
+
 func stdoutLogger(s LogSettings) (*zap.Logger, error) {
+	return buildLogger(s, "stdout")
+}
+
+func buildLogger(s LogSettings, output string) (*zap.Logger, error) {
 	level, err := zapcore.ParseLevel(string(s.Level))
 	if err != nil {
 		return nil, fmt.Errorf("log level: %w", err)
@@ -280,7 +300,7 @@ func stdoutLogger(s LogSettings) (*zap.Logger, error) {
 	cfg.Level = zap.NewAtomicLevelAt(level)
 	cfg.Encoding = string(s.Format)
 	cfg.Sampling = nil
-	cfg.OutputPaths = []string{"stdout"}
+	cfg.OutputPaths = []string{output}
 	cfg.ErrorOutputPaths = []string{"stderr"}
 	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	logger, err := cfg.Build()

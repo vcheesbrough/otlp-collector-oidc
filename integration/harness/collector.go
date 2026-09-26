@@ -189,6 +189,18 @@ func (c *Collector) Output() string {
 	return c.output.String()
 }
 
+// Stderr is what the process has written to stderr alone.
+func (c *Collector) Stderr() string {
+	return c.stderr.String()
+}
+
+// Stop sends SIGTERM now, rather than when the test ends, waits for the exit
+// and asserts it was clean. Stopping twice is harmless.
+func (c *Collector) Stop(t *testing.T) {
+	t.Helper()
+	c.stop(t)
+}
+
 // Stdout is what the process has written to stdout alone: its log lines.
 func (c *Collector) Stdout() string {
 	return c.stdout.String()

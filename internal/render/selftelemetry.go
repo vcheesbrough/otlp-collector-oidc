@@ -114,11 +114,31 @@ func (s Settings) SelfLogProcessors() (string, error) {
 	return strings.ReplaceAll(strings.TrimSpace(buf.String()), "$", "$$"), nil
 }
 
+// FallbackServiceName is the process's service.name when OTEL_SERVICE_NAME
+// is unset: the one in OTEL_RESOURCE_ATTRIBUTES, as the SDK convention has
+// it, else the binary's name.
+func (s Settings) FallbackServiceName() string {
+	for _, kv := range s.Own.ResourceAttributes {
+		if kv.Key == "service.name" {
+			return kv.Value
+		}
+	}
+	return build.Command
+}
+
+// serviceName is the process's service.name.
+func (s Settings) serviceName() string {
+	if s.Own.ServiceName != "" {
+		return s.Own.ServiceName
+	}
+	return s.FallbackServiceName()
+}
+
 // ownResource is the process's resource beyond what the collector adds
 // itself (service.version from the build, service.instance.id): its name,
 // then OTEL_RESOURCE_ATTRIBUTES less the keys the name and the build own.
 func (s Settings) ownResource() []KeyValue {
-	out := []KeyValue{{Key: "service.name", Value: s.Own.ServiceName}}
+	out := []KeyValue{{Key: "service.name", Value: s.serviceName()}}
 	return append(out, s.Own.ResourceAttributes.Without("service.name", serviceVersionKey)...)
 }
 

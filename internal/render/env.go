@@ -92,7 +92,7 @@ type LogSettings struct {
 // resolved upstream.
 type OwnSettings struct {
 	Output             LogOutput    `env:"LOG_OUTPUT"               default:"both"                doc:"'both', 'otlp' or 'stdout'. Own logs go to the logs upstream as OTLP unless 'stdout'; stdout keeps a copy unless 'otlp'. On a platform that also ships container stdout to the same store, pick one"`
-	ServiceName        string       `env:"OTEL_SERVICE_NAME"        default:"otlp-collector-oidc" doc:"This process's own 'service.name' on its logs and metrics; takes precedence over one in 'OTEL_RESOURCE_ATTRIBUTES'"`
+	ServiceName        string       `env:"OTEL_SERVICE_NAME"                                      doc:"This process's own 'service.name' on its logs and metrics. Unset, the 'service.name' in 'OTEL_RESOURCE_ATTRIBUTES' is used, else 'otlp-collector-oidc'"`
 	ResourceAttributes KeyValueList `env:"OTEL_RESOURCE_ATTRIBUTES"                               doc:"'key=value,...', values percent-decoded: this process's own resource attributes, on its logs and metrics. 'service.version' is the build's and is ignored with a warning. Not what is stamped on client data"`
 }
 

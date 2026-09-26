@@ -152,8 +152,9 @@ rendered from the environment by `run`). One Go module.
 - **Interfaces and dependencies.** Define interfaces where they are consumed, keep
   them small, accept interfaces and return concrete types; assert compliance at
   compile time (`var _ extensionauth.Server = (*authenticator)(nil)`); inject clocks,
-  HTTP clients and key sets; no package-level mutable state (the one exception is the
-  linker-set version in `internal/build`); no `init()`.
+  HTTP clients and key sets; no package-level mutable state (the exceptions: the
+  linker-set version in `internal/build`, and in test code the integration harness's
+  set of ports it has handed out, which every parallel test must share); no `init()`.
 - **Concurrency.** Every goroutine has an owner and an exit path (`context`,
   `errgroup`, or a server's `Stop`), never fire-and-forget; mutexes are value fields
   next to what they guard; `context.Context` is the first parameter wherever work can

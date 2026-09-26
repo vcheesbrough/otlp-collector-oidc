@@ -58,7 +58,7 @@ service:
     # service.version is the build's, which the collector adds itself.
     resource:
       "service.name": "otlp-collector-oidc"
-      "a%22b": "$${env:HOME}"
+      "a\"b$${x}#: {}": "$${env:HOME}"
     logs:
       level: "info"
       encoding: "json"
