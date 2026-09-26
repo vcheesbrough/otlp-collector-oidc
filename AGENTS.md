@@ -33,8 +33,8 @@ Shared skills apply here once the machine is wired up (`start-iteration`,
 - CI reproduce commands: `make lint`, `make vet`, `make vuln`, `make test`,
   `make integration` (`go test ./integration`), `make generate-check`,
   `make versions-check`, `make docs-check`, `make alerts-check`,
-  `scripts/oci-labels-check.sh`, `make build`, and
-  `make image && scripts/image-smoke.sh ghcr.io/vcheesbrough/otlp-collector-oidc:dev "$(scripts/version.sh)"`
+  `scripts/oci-labels-check.sh` (and `scripts/oci-labels-check_test.sh`), `make build`, and
+  `make image && scripts/image-smoke.sh ghcr.io/vcheesbrough/otlp-collector-oidc:dev "$(scripts/version.sh)" "$(git rev-parse HEAD)" "$(git log -1 --format=%cI HEAD)"`
 - Extra review criteria beyond the baseline five (correctness, security/OWASP, tests,
   versioning, scope): every change to `extension/` or `receiver/` is on the trust
   boundary — the reviewer checks that no client-supplied value can reach a metric

@@ -31,6 +31,7 @@ done
 [ -z "$revision" ] || [ "$(label revision)" = "$revision" ] || fail "OCI revision label is '$(label revision)', want '$revision'"
 [ -z "$created" ] || [ "$(label created)" = "$created" ] || fail "OCI created label is '$(label created)', want '$created'"
 case "$(label created)" in
+1970-01-01T00:00:00Z) fail "OCI created label is the Dockerfile's default: CREATED was not passed" ;;
 [12][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]T*) ;;
 *) fail "OCI created label '$(label created)' is not an RFC 3339 time" ;;
 esac

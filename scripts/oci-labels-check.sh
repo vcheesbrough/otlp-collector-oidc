@@ -4,9 +4,21 @@
 # per-build ones (version, revision, created) must appear in both. The two
 # lists are written twice because GHCR reads a multi-arch image's labels from
 # its index, which docker build does not annotate.
+# Also: base.name is the runtime stage's FROM image. The repository root
+# is $1, the current directory by default (the test points it at a copy).
 set -eu
-labels=$(sed -n 's/^.*\(org\.opencontainers\.image\.[a-z.]*\)="\([^"]*\)".*$/\1=\2/p' Dockerfile | sort)
-annotations=$(sed -n 's/^ *index:\(org\.opencontainers\.image\.[a-z.]*=.*\)$/\1/p' .github/workflows/release.yml | sort)
+root=${1:-.}
+labels=$(sed -n 's/^.*\(org\.opencontainers\.image\.[a-z.]*\)="\([^"]*\)".*$/\1=\2/p' "$root/Dockerfile" | sort)
+annotations=$(sed -n 's/^ *index:\(org\.opencontainers\.image\.[a-z.]*=.*\)$/\1/p' "$root/.github/workflows/release.yml" | sort)
+base=$(sed -n 's/^FROM \([^ ]*\)\( AS .*\)\{0,1\}$/\1/p' "$root/Dockerfile" | tail -n 1)
+case "$base" in
+*/*) ;;
+*) base="docker.io/library/$base" ;;
+esac
+if ! printf '%s\n' "$labels" | grep -qx "org.opencontainers.image.base.name=$base"; then
+	echo "oci-labels-check: base.name is not the runtime image, $base" >&2
+	exit 1
+fi
 static() { grep -v -E '^org\.opencontainers\.image\.(version|revision|created)='; }
 keys() { sed 's/=.*//'; }
 if [ "$(printf '%s\n' "$labels" | static)" != "$(printf '%s\n' "$annotations" | static)" ]; then

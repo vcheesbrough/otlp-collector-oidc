@@ -61,7 +61,7 @@ jobs:
         run: scripts/release-plan_test.sh
       - name: OCI labels match the release annotations
         if: ${{ !cancelled() }}
-        run: scripts/oci-labels-check.sh
+        run: scripts/oci-labels-check.sh && scripts/oci-labels-check_test.sh
       - name: Alert rules (promtool check and unit tests)
         if: ${{ !cancelled() }}
         run: make alerts-check
