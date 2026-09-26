@@ -117,9 +117,20 @@ func without(c harness.Claims, keys ...string) harness.Claims {
 // docs/token-profile.md is a scenario here, over both protocols, asserting
 // the exact refusal text, the counter and that nothing reaches the sink.
 func TestAuth(t *testing.T) {
-	// A warning interval longer than the run, so every reason warns exactly
-	// once however long the run takes.
-	env := startShipped(t, map[string]string{"REJECTION_LOG_INTERVAL": "1h"})
+	tokenProfile(t, startShipped(t, authEnv()))
+}
+
+// authEnv is the variables the token profile's table runs with: a warning
+// interval longer than the run, so every reason warns exactly once however
+// long the run takes.
+func authEnv() map[string]string {
+	return map[string]string{"REJECTION_LOG_INTERVAL": "1h"}
+}
+
+// tokenProfile is the conformance table, against whatever frontend env's
+// clients reach the collector through.
+func tokenProfile(t *testing.T, env shipped) {
+	t.Helper()
 	iss := env.issuer
 	valid := iss.Claims()
 	now := time.Now()

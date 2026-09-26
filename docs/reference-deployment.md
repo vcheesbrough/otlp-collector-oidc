@@ -65,11 +65,14 @@ Host(`<product>`) && (PathPrefix(`/v1/`) || PathPrefix(`/opentelemetry.proto.col
 with no prefix stripping; the gRPC client is given `https://<product>` and generates
 its own method paths. Where `/v1/` is taken, the HTTP router mounts `/otlp` with
 `stripprefix` and the gRPC rule stays separate — still one service. `rate-limit@docker`
-on every router. The full label block is `examples/compose-behind-traefik/`.
+on every router. The full label block is
+[`examples/compose-behind-traefik/`](../examples/compose-behind-traefik/); the contract
+and the reasons are [the proxy guide](proxies/traefik.md).
 
 Observability labels (`observability.service.name`,
 `observability.deployment.environment`, `observability.metrics.*` for the `:8888`
-scrape), the hardening block (`user: 65534`, `cap_drop: ALL`, `read_only`,
+scrape), the hardening block (the image's own user `10001` — the one that can read the
+embedded key — `cap_drop: ALL`, `read_only` with a `/tmp` tmpfs,
 `no-new-privileges`, `mem_limit`), and **never** in the deploy health gate.
 
 ## Downstream: the shared Alloy
