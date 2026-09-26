@@ -65,7 +65,7 @@ Every `OTEL_EXPORTER_OTLP_*` variable above also has `OTEL_EXPORTER_OTLP_TRACES_
 | --- | --- | --- |
 | `ALLOWED_SERVICE_NAMES` | **required** | Regular expression the whole `service.name` of a resource must match; a resource that does not, or has none, is dropped with its spans and records, and counted. `service.name` becomes a stream label downstream, so a client inventing names costs cardinality: `.*` admits any, explicitly |
 | `MAX_FUTURE_SKEW` | `5m` | A timestamp further ahead than this is set to the collector's now |
-| `MAX_PAST_AGE` | `48h` | A span started, or a log record timestamped, longer ago than this is dropped and counted (a backend's ingestion window) |
+| `MAX_PAST_AGE` | `48h` | A span started, or a log record timestamped, longer ago than this is dropped and counted (a backend's ingestion window). A span with no start is dropped; a record with no timestamp is kept |
 
 ## Resources and batching
 

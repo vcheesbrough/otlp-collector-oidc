@@ -75,7 +75,7 @@ type ListenerSettings struct {
 type BoundsSettings struct {
 	AllowedServiceNames ServiceNamePattern `env:"ALLOWED_SERVICE_NAMES" required:"true" doc:"Regular expression the whole 'service.name' of a resource must match; a resource that does not, or has none, is dropped with its spans and records, and counted. 'service.name' becomes a stream label downstream, so a client inventing names costs cardinality: '.*' admits any, explicitly"`
 	MaxFutureSkew       time.Duration      `env:"MAX_FUTURE_SKEW"       default:"5m"     doc:"A timestamp further ahead than this is set to the collector's now"`
-	MaxPastAge          time.Duration      `env:"MAX_PAST_AGE"          default:"48h"    doc:"A span started, or a log record timestamped, longer ago than this is dropped and counted (a backend's ingestion window)"`
+	MaxPastAge          time.Duration      `env:"MAX_PAST_AGE"          default:"48h"    doc:"A span started, or a log record timestamped, longer ago than this is dropped and counted (a backend's ingestion window). A span with no start is dropped; a record with no timestamp is kept"`
 }
 
 // Validate refuses a negative bound, which would drop or clamp everything.

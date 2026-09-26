@@ -21,6 +21,20 @@ type ServiceNamePattern string
 // UnmarshalText accepts a regular expression in Go's syntax, which OTTL's
 // IsMatch uses too.
 func (p *ServiceNamePattern) UnmarshalText(text []byte) error {
+	for _, c := range text {
+		if c < 0x20 || c == 0x7f {
+			return errors.New("must not contain control characters")
+		}
+	}
+	// The pattern must stand on its own: "a)|(b" compiles once anchored as
+	// "^(?:a)|(b)$", which admits far more than it says.
+	if _, err := regexp.Compile(string(text)); err != nil {
+		var serr *syntax.Error
+		if errors.As(err, &serr) {
+			return fmt.Errorf("must be a regular expression: %s", serr.Code)
+		}
+		return errors.New("must be a regular expression")
+	}
 	if _, err := regexp.Compile(anchored(string(text))); err != nil {
 		var serr *syntax.Error
 		if errors.As(err, &serr) {
@@ -45,7 +59,8 @@ func serviceNameFilter(pattern ServiceNamePattern) string {
 	return fmt.Sprintf(`not IsString(resource.attributes["service.name"]) or not IsMatch(resource.attributes["service.name"], %s)`, ottlString(anchored(string(pattern))))
 }
 
-// pastAgeSpanFilter drops a span that started longer ago than maxAge.
+// pastAgeSpanFilter drops a span that started longer ago than maxAge. A span
+// with no start (zero) is dropped too: it would land at 1970 downstream.
 func pastAgeSpanFilter(maxAge time.Duration) string {
 	return fmt.Sprintf(`span.start_time < Now() - Duration(%s)`, ottlString(maxAge.String()))
 }
@@ -57,13 +72,16 @@ func pastAgeLogFilter(maxAge time.Duration) string {
 	return fmt.Sprintf(`log.time_unix_nano != 0 and log.time < Now() - Duration(%s)`, ottlString(maxAge.String()))
 }
 
-// futureSkewClamps set each timestamp further ahead than skew to now. A span
-// clamped at its start is clamped at its end too, since the end is later
-// still, so the span never ends before it starts.
+// futureSkewSpanClamps set each timestamp further ahead than skew to now,
+// in an order that never leaves a span ending before it starts: the start
+// first; then an end beyond the skew whose start is still ahead of now (the
+// start was inside the skew) becomes the start; any other end beyond it
+// becomes now.
 func futureSkewSpanClamps(skew time.Duration) []string {
 	d := ottlString(skew.String())
 	return []string{
 		fmt.Sprintf(`set(span.start_time, Now()) where span.start_time > Now() + Duration(%s)`, d),
+		fmt.Sprintf(`set(span.end_time, span.start_time) where span.end_time > Now() + Duration(%s) and span.start_time > Now()`, d),
 		fmt.Sprintf(`set(span.end_time, Now()) where span.end_time > Now() + Duration(%s)`, d),
 	}
 }

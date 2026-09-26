@@ -24,7 +24,8 @@ import (
 // boundsEnv is the shape the bounds run in.
 func boundsEnv() map[string]string {
 	return map[string]string{
-		"ALLOWED_SERVICE_NAMES": "app-(web|ios)",
+		// A backslash, to prove the pattern reaches OTTL escaped.
+		"ALLOWED_SERVICE_NAMES": `app-(web|ios)|svc-\d+`,
 		"MAX_FUTURE_SKEW":       "5m",
 		"MAX_PAST_AGE":          "1h",
 	}
@@ -34,9 +35,13 @@ func boundsEnv() map[string]string {
 // empty), marker, and the one span's start or record's time.
 type resourceItem struct {
 	service string
-	marker  string
-	at      time.Time
-	noTime  bool // a log record with no timestamp
+	// numeric sets service.name to a number instead of service.
+	numeric bool
+	// end, when set, is the span's end instead of at plus a second.
+	end    time.Time
+	marker string
+	at     time.Time
+	noTime bool // no timestamp: a record without one, a span without a start
 }
 
 func tracesOf(items ...resourceItem) ptraceotlp.ExportRequest {
@@ -49,7 +54,14 @@ func tracesOf(items ...resourceItem) ptraceotlp.ExportRequest {
 		span.SetTraceID(pcommon.TraceID{9, 9, byte(i + 1)})
 		span.SetSpanID(pcommon.SpanID{9, byte(i + 1)})
 		span.SetStartTimestamp(pcommon.NewTimestampFromTime(it.at))
-		span.SetEndTimestamp(pcommon.NewTimestampFromTime(it.at.Add(time.Second)))
+		end := it.at.Add(time.Second)
+		if !it.end.IsZero() {
+			end = it.end
+		}
+		if it.noTime {
+			span.SetStartTimestamp(0)
+		}
+		span.SetEndTimestamp(pcommon.NewTimestampFromTime(end))
 	}
 	return ptraceotlp.NewExportRequestFromTraces(td)
 }
@@ -69,7 +81,10 @@ func logsOf(items ...resourceItem) plogotlp.ExportRequest {
 }
 
 func fillBoundsResource(r pcommon.Resource, it resourceItem) {
-	if it.service != "" {
+	switch {
+	case it.numeric:
+		r.Attributes().PutInt("service.name", 42)
+	case it.service != "":
 		r.Attributes().PutStr("service.name", it.service)
 	}
 	r.Attributes().PutStr(harness.MarkerKey, it.marker)
@@ -132,13 +147,16 @@ func TestBounds(t *testing.T) {
 				resourceItem{service: "rogue", marker: m + "/rogue", at: time.Now()},
 				resourceItem{service: "my-app-web-2", marker: m + "/substring", at: time.Now()},
 				resourceItem{marker: m + "/unnamed", at: time.Now()},
+				resourceItem{numeric: true, marker: m + "/numeric", at: time.Now()},
+				resourceItem{service: "svc-12", marker: m + "/escaped", at: time.Now()},
 			)
 			arrived(t, sink, m+"/allowed")
-			for _, dropped := range []string{"/rogue", "/substring", "/unnamed"} {
+			arrived(t, sink, m+"/escaped")
+			for _, dropped := range []string{"/rogue", "/substring", "/unnamed", "/numeric"} {
 				absentAt(t, sink, m+dropped)
 			}
-			assert.Eventually(t, func() bool { return filtered()-before == 6 }, eventually, 50*time.Millisecond,
-				"the filter's counters moved by %v, want 6 (3 spans, 3 records)", filtered()-before)
+			assert.Eventually(t, func() bool { return filtered()-before == 8 }, eventually, 50*time.Millisecond,
+				"the filter's counters moved by %v, want 8 (4 spans, 4 records)", filtered()-before)
 		})
 
 		t.Run("past age/"+p.String(), func(t *testing.T) {
@@ -174,18 +192,43 @@ func TestBounds(t *testing.T) {
 				assert.False(t, ts.Before(sent) || ts.After(received), "%s %v was not clamped to the collector's now (sent %v, received %v)", name, ts, sent, received)
 			}
 			assert.False(t, end.Before(start), "the clamped span ends before it starts")
+
+			// Starting inside the skew and ending beyond it: the end becomes
+			// the start, never earlier.
+			m2 := m + "/straddling"
+			got := env.clients.export(t.Context(), t, p, harness.SignalTraces, tracesOf(
+				resourceItem{service: "app-web", marker: m2, at: sent.Add(4 * time.Minute), end: sent.Add(time.Hour)}))
+			require.Equal(t, codes.OK, got.code, got.message)
+			var td ptrace.Traces
+			require.Eventually(t, func() bool {
+				var ok bool
+				td, ok = harness.FindTraces(sink.Received().Traces, m2)
+				return ok
+			}, eventually, 10*time.Millisecond, "%s never arrived", m2)
+			span := td.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+			assert.WithinDuration(t, sent.Add(4*time.Minute), span.StartTimestamp().AsTime(), time.Second, "the start inside the skew is unchanged")
+			assert.Equal(t, span.StartTimestamp(), span.EndTimestamp(), "the end beyond the skew becomes the start")
 		})
 	}
 
-	t.Run("a record without a timestamp is kept", func(t *testing.T) {
-		m := "bounds/untimed"
-		got := env.clients.export(t.Context(), t, protocolHTTP, harness.SignalLogs, logsOf(resourceItem{service: "app-web", marker: m, noTime: true}))
-		require.Equal(t, codes.OK, got.code, got.message)
-		require.Eventually(t, func() bool {
-			_, ok := harness.FindLogs(sink.Received().Logs, m)
-			return ok
-		}, eventually, 10*time.Millisecond, "an untimed record was dropped")
-	})
+	for _, p := range protocols {
+		t.Run("untimed/"+p.String(), func(t *testing.T) {
+			// A record with no timestamp is kept; a span with no start is
+			// dropped. A timed witness in the same requests proves both were
+			// processed.
+			m := "bounds/untimed/" + p.String()
+			exportBoth(t, env, p,
+				resourceItem{service: "app-web", marker: m + "/untimed", noTime: true},
+				resourceItem{service: "app-web", marker: m + "/witness", at: time.Now()},
+			)
+			arrived(t, sink, m+"/witness")
+			r := sink.Received()
+			_, spanKept := harness.FindTraces(r.Traces, m+"/untimed")
+			_, recordKept := harness.FindLogs(r.Logs, m+"/untimed")
+			assert.False(t, spanKept, "a span with no start is dropped")
+			assert.True(t, recordKept, "a record with no timestamp is kept")
+		})
+	}
 }
 
 // TestBoundsAnyName admits every name with ".*" (a resource with no
@@ -199,7 +242,9 @@ func TestBoundsAnyName(t *testing.T) {
 		m := "bounds/any/" + p.String()
 		exportBoth(t, env, p,
 			resourceItem{service: "anything-at-all", marker: m + "/named", at: time.Now()},
+			resourceItem{marker: m + "/unnamed", at: time.Now()},
 		)
 		arrived(t, sink, m+"/named")
+		absentAt(t, sink, m+"/unnamed")
 	}
 }

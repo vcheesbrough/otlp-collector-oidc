@@ -43,6 +43,7 @@ processors:
     error_mode: ignore
     trace_statements:
       - "set(span.start_time, Now()) where span.start_time > Now() + Duration(\"5m0s\")"
+      - "set(span.end_time, span.start_time) where span.end_time > Now() + Duration(\"5m0s\") and span.start_time > Now()"
       - "set(span.end_time, Now()) where span.end_time > Now() + Duration(\"5m0s\")"
     log_statements:
       - "set(log.time, Now()) where log.time > Now() + Duration(\"5m0s\")"

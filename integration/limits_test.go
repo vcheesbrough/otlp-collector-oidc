@@ -141,6 +141,8 @@ func TestRefusesToStart(t *testing.T) {
 		{name: "no audience", opts: harness.Options{Env: with("OIDC_AUDIENCE", "")}, wantText: "OIDC_AUDIENCE is required"},
 		{name: "no allowed service names", opts: harness.Options{Env: with("ALLOWED_SERVICE_NAMES", "")}, wantText: "ALLOWED_SERVICE_NAMES is required"},
 		{name: "allowed service names not a regex", opts: harness.Options{Env: with("ALLOWED_SERVICE_NAMES", "app-(web")}, wantText: `invalid ALLOWED_SERVICE_NAMES "app-(web": must be a regular expression: missing closing )`},
+		{name: "allowed service names escaping the anchors", opts: harness.Options{Env: with("ALLOWED_SERVICE_NAMES", "a)|(b")}, wantText: `invalid ALLOWED_SERVICE_NAMES "a)|(b": must be a regular expression: unexpected )`},
+		{name: "allowed service names with a newline", opts: harness.Options{Env: with("ALLOWED_SERVICE_NAMES", "app\nother")}, wantText: "invalid ALLOWED_SERVICE_NAMES", alsoText: "must not contain control characters"},
 		{name: "negative future skew", opts: harness.Options{Env: with("MAX_FUTURE_SKEW", "-1m")}, wantText: "MAX_FUTURE_SKEW (-1m0s) must not be negative"},
 		{name: "zero past age", opts: harness.Options{Env: with("MAX_PAST_AGE", "0s")}, wantText: "MAX_PAST_AGE (0s) must be positive"},
 		{name: "no upstream endpoint", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "")}, wantText: "OTEL_EXPORTER_OTLP_ENDPOINT is required"},
