@@ -53,8 +53,12 @@ sharing a name would fight over it.
 2. Copy the blueprint to the worker's blueprint directory, for example
    `/blueprints/custom/otlp-collector-oidc.yaml`.
 3. **Customisation → Blueprints → Create**: choose the file, set the context above as
-   YAML, save, and **Apply**. The status becomes `successful`.
-4. Add the users who may send to the group.
+   YAML, save, and **Apply**. The status becomes `successful`. The blueprint is
+   labelled not to instantiate itself, so nothing is created until you do this.
+4. Check the provider signs: `curl https://<authentik>/application/o/<app_slug>/jwks/`
+   must list a key under `keys`. `{}` means `signing_key_name` matched no key — the
+   blueprint still reports `successful` — and every token would be HS256.
+5. Add the users who may send to the group.
 
 ## Configure the collector
 

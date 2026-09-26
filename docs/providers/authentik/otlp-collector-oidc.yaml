@@ -10,6 +10,9 @@ metadata:
   name: otlp-collector-oidc
   labels:
     blueprints.goauthentik.io/description: OAuth2 provider for otlp-collector-oidc clients
+    # Never applied just for being in the blueprints directory: every
+    # environment is an instance with its own context.
+    blueprints.goauthentik.io/instantiate: "false"
 context:
   # The application's slug, and so the issuer path. Never change it once
   # clients hold tokens: the issuer changes with it.
@@ -22,8 +25,9 @@ context:
   # Members of this group may send telemetry; nobody else gets a token.
   group_name: otlp-collector-oidc senders
   # The key that signs tokens. It is what makes the access token a signed
-  # JWT the collector can verify; generate a dedicated one (Admin →
-  # Certificates → Generate) and name it here.
+  # JWT the collector can verify; generate a dedicated one (System →
+  # Certificates → Generate) and name it here. A name that matches no key
+  # leaves the provider unsigned without an error: check its JWKS.
   signing_key_name: authentik Self-signed Certificate
 entries:
   # The scope the collector requires (REQUIRED_SCOPE). It adds no claim:
