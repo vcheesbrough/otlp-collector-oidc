@@ -78,7 +78,14 @@ regular expression the whole `service.name` of a client's resource must match (`
 admits any): `service.name` becomes a stream label downstream, so the deployer says
 which names are admitted. Spans and records outside it, or older than `MAX_PAST_AGE`,
 are dropped after the client's `200` and counted; timestamps further ahead than
-`MAX_FUTURE_SKEW` are set to now. A missing required variable
+`MAX_FUTURE_SKEW` are set to now.
+
+Client metrics are dropped unless allowed: `ALLOWED_METRIC_NAMES` (a regular
+expression; empty drops every metric) and `ALLOWED_METRIC_ATTRIBUTE_KEYS` (the datapoint
+keys kept; empty strips them all). Their resource keeps only `service.name`,
+`service.version` and `CLIENT_RESOURCE_ATTRIBUTES`; no identity key survives, whatever
+the allowlist says. Delta streams become cumulative, at most `MAX_METRIC_STREAMS` of
+them. A missing required variable
 or a value that does not parse stops the process before it listens, and the error
 names the variable and the value — except a header's, which is never printed.
 
@@ -184,7 +191,9 @@ telemetry — `user.id`, `user.name`, `user.email`, `user.full_name` on every
 span and log record (`CLAIM_ATTRIBUTES`), the deployment's attributes on every
 resource (`CLIENT_RESOURCE_ATTRIBUTES`) — bounds what a client can cost
 (`ALLOWED_SERVICE_NAMES`, timestamp clamps), and its own logs go upstream as OTLP, with
-a dashboard, alerts and runbook. The metrics pipeline follows —
+a dashboard, alerts and runbook. Client metrics are accepted on a separate pipeline
+that never carries identity, allowlisted by name and datapoint key, converted from
+delta to cumulative under a stream cap —
 [board](https://bored.desync.link/boards/otlp-collector-oidc).
 
 ## Licence

@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	grpcgzip "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // Signal is an OTLP signal.
@@ -241,6 +242,18 @@ func NewGRPCClient(t *testing.T, addr string, pool *x509.CertPool) *GRPCClient {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	return &GRPCClient{conn: conn}
+}
+
+// CallUnknownService calls a gRPC method no OTLP service registers, as a
+// client of a signal the collector does not serve would.
+func (c *GRPCClient) CallUnknownService(ctx context.Context) error {
+	if c.bearer != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+c.bearer)
+	}
+	if err := c.conn.Invoke(ctx, "/opentelemetry.proto.collector.profiles.v1development.ProfilesService/Export", &emptypb.Empty{}, &emptypb.Empty{}); err != nil {
+		return fmt.Errorf("unknown service: %w", err)
+	}
+	return nil
 }
 
 // Export sends m, which must be a traces, logs or metrics export request.

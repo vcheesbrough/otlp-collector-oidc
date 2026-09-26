@@ -96,6 +96,8 @@ func dispatchScenarios(env shipped) func(*testing.T) {
 	return func(t *testing.T) {
 		traces, err := harness.Traces("dispatch", 1).MarshalProto()
 		require.NoError(t, err)
+		metrics, err := harness.Metrics("dispatch", 1).MarshalProto()
+		require.NoError(t, err)
 
 		httpCases := []struct {
 			name        string
@@ -115,7 +117,7 @@ func dispatchScenarios(env shipped) func(*testing.T) {
 			{name: "no content type", method: http.MethodPost, path: "/v1/logs", body: traces, wantStatus: http.StatusUnsupportedMediaType},
 			{name: "unknown path", method: http.MethodPost, path: "/v1/profiles", contentType: "application/x-protobuf", body: traces, wantStatus: http.StatusNotFound},
 			{name: "root", method: http.MethodGet, path: "/", wantStatus: http.StatusNotFound},
-			{name: "metrics are unwired", method: http.MethodPost, path: "/v1/metrics", contentType: "application/x-protobuf", body: traces, wantStatus: http.StatusNotFound},
+			{name: "metrics reach the HTTP handler", method: http.MethodPost, path: "/v1/metrics", contentType: "application/x-protobuf", body: metrics, wantStatus: http.StatusOK},
 			{name: "gRPC content type over HTTP/1.1 is not gRPC", http1: true, method: http.MethodPost, path: "/opentelemetry.proto.collector.trace.v1.TraceService/Export", contentType: "application/grpc", body: traces, wantStatus: http.StatusNotFound},
 		}
 		for _, tc := range httpCases {
@@ -148,7 +150,7 @@ func dispatchScenarios(env shipped) func(*testing.T) {
 		}{
 			{name: "gRPC traces reach the gRPC service", message: harness.Traces("dispatch-grpc", 1), wantCode: codes.OK},
 			{name: "gRPC logs reach the gRPC service", message: harness.Logs("dispatch-grpc", 1), wantCode: codes.OK},
-			{name: "gRPC metrics are unwired", message: harness.Metrics("dispatch-grpc", 1), wantCode: codes.Unimplemented},
+			{name: "gRPC metrics reach the gRPC service", message: harness.Metrics("dispatch-grpc", 1), wantCode: codes.OK},
 		}
 		for _, tc := range grpcCases {
 			t.Run(tc.name, func(t *testing.T) {
