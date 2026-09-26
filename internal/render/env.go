@@ -64,6 +64,7 @@ type ListenerSettings struct {
 	TLSKeyFile          string        `env:"TLS_KEY_FILE"           default:"/etc/otlp-collector-oidc/tls/key.pem"  doc:"Its private key (PEM); set together with 'TLS_CERT_FILE'"`
 	TLSReloadInterval   time.Duration `env:"TLS_RELOAD_INTERVAL"    default:"1m"                                    doc:"How often the pair is re-read from disk, so a rotated certificate needs no restart"`
 	MaxRequestBodyBytes int64         `env:"MAX_REQUEST_BODY_BYTES" default:"4194304"                               doc:"Cap on the decompressed request, '413' beyond it; a gRPC message may be 5 bytes less (its frame header), 'ResourceExhausted' beyond it"`
+	DriftProof          string        `env:"DRIFT_PROOF" doc:"Deliberate mismatch: declared, never rendered or documented"`
 	CORSAllowedOrigins  []string      `env:"CORS_ALLOWED_ORIGINS"                                                   doc:"Comma-separated origins allowed to send from a browser on another origin; empty turns CORS off"`
 }
 
