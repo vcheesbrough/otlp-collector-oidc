@@ -24,6 +24,8 @@ standard Go way: mount the CA and set `SSL_CERT_FILE` or `SSL_CERT_DIR`.
 | `OIDC_JWKS_REFRESH` | `10m` | JWKS re-read interval: the longest a key the provider removes is still trusted |
 | `REQUIRED_SCOPE` | `telemetry:write` | Must appear in `scope` (or `scp`) |
 | `REQUIRED_CLAIMS` | `sub,preferred_username` | Comma-separated claims that must each be present and non-empty |
+| `CLAIM_ATTRIBUTES` | `sub=user.id,preferred_username=user.name,email=user.email,name=user.full_name` | `claim=attribute,...`: each claim the token carries becomes that span and log attribute, overwriting what the client sent; a claim the token lacks leaves the attribute absent, never the client's value. Not `service.name` or `service.version`, which are the client's |
+| `CLIENT_RESOURCE_ATTRIBUTES` | *(empty)* | `key=value,...` stamped onto every client resource, overwriting the client's: `deployment.environment.name` and a path marker such as `telemetry_source=client`. Empty keeps the client's resource as sent. Not `OTEL_RESOURCE_ATTRIBUTES`, which describes this process |
 | `CLOCK_SKEW` | `60s` | Tolerance on `exp`, `nbf` and `iat` |
 | `REJECTION_LOG_INTERVAL` | `60s` | At most one warning per refusal reason per interval |
 

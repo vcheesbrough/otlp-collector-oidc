@@ -31,7 +31,14 @@ func Render(s Settings) ([]byte, error) {
 func parseTemplate() (*template.Template, error) {
 	tmpl, err := template.New("collector.yaml.tmpl").
 		Option("missingkey=error").
-		Funcs(template.FuncMap{"q": quote, "list": quoteList}).
+		Funcs(template.FuncMap{
+			"q":                  quote,
+			"list":               quoteList,
+			"identityActions":    identityActions,
+			"identityProcessors": identityProcessors,
+			"resourceActions":    resourceActions,
+			"join":               func(items []string) string { return strings.Join(items, ", ") },
+		}).
 		Parse(templateText)
 	if err != nil {
 		return nil, fmt.Errorf("parsing the collector template: %w", err)

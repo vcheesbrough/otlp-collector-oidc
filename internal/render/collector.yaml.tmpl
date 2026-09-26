@@ -5,7 +5,8 @@ docs/configuration.md. Strings pass through `q`, which quotes them and escapes
 "$", so no value can inject YAML or a ${...} reference.
 
 Every request is authenticated by oidcclientauth before it is dispatched.
-Traces and logs: otlpsingleport → memory_limiter → batch → the signal's
+Traces and logs: otlpsingleport → memory_limiter → attributes/identity →
+resource/identity → batch → the signal's
 exporter: otlp_grpc or otlp_http, one per distinct upstream configuration
 (internal/upstream), so signals with the same upstream share one. Metrics have
 no pipeline yet, so their upstream is not resolved and the receiver answers
@@ -37,6 +38,27 @@ processors:
     check_interval: 1s
     limit_mib: {{ .Resources.MemoryLimitMiB }}
     spike_limit_mib: {{ .Resources.MemorySpikeLimitMiB }}
+  # Identity from the token, on every span and log record (identity.go).
+  attributes/identity:
+    actions:
+{{- range identityActions .Identity.ClaimAttributes }}
+      - key: {{ q .Key }}
+        action: {{ .Action }}
+{{- with .FromContext }}
+        from_context: {{ q . }}
+{{- end }}
+{{- end }}
+  # No identity on the resource but the token's (on the spans and records),
+  # and the deployment's static attributes over the client's.
+  resource/identity:
+    attributes:
+{{- range resourceActions .Identity.ClaimAttributes .Identity.ClientResourceAttrs }}
+      - key: {{ q .Key }}
+        action: {{ .Action }}
+{{- if eq .Action "upsert" }}
+        value: {{ q .Value }}
+{{- end }}
+{{- end }}
   batch:
     timeout: {{ q .Resources.BatchTimeout }}
 
@@ -88,6 +110,10 @@ extensions:
     jwks_refresh: {{ q .Identity.JWKSRefresh }}
     required_scope: {{ q .Identity.RequiredScope }}
     required_claims: {{ list .Identity.RequiredClaims }}
+    claim_attributes:
+{{- range .Identity.ClaimAttributes }}
+      {{ q .Key }}: {{ q .Value }}
+{{- end }}
     clock_skew: {{ q .Identity.ClockSkew }}
     rejection_log_interval: {{ q .Identity.RejectionLogInterval }}
 
@@ -123,9 +149,9 @@ service:
   pipelines:
     traces:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, batch]
+      processors: [{{ join identityProcessors }}]
       exporters: [{{ .Upstream.ExporterFor "traces" }}]
     logs:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, batch]
+      processors: [{{ join identityProcessors }}]
       exporters: [{{ .Upstream.ExporterFor "logs" }}]

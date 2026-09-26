@@ -20,64 +20,38 @@ processors:
   # Identity from the token, on every span and log record (identity.go).
   attributes/identity:
     actions:
-      - key: "user.id"
+      - key: "enduser.id"
         action: delete
-      - key: "user.id"
+      - key: "enduser.id"
         action: upsert
-        from_context: "auth.user.id"
-      - key: "user.name"
+        from_context: "auth.enduser.id"
+      - key: "enduser.email"
         action: delete
-      - key: "user.name"
+      - key: "enduser.email"
         action: upsert
-        from_context: "auth.user.name"
-      - key: "user.email"
-        action: delete
-      - key: "user.email"
-        action: upsert
-        from_context: "auth.user.email"
-      - key: "user.full_name"
-        action: delete
-      - key: "user.full_name"
-        action: upsert
-        from_context: "auth.user.full_name"
+        from_context: "auth.enduser.email"
   # No identity on the resource but the token's (on the spans and records),
   # and the deployment's static attributes over the client's.
   resource/identity:
     attributes:
-      - key: "user.id"
+      - key: "enduser.id"
         action: delete
-      - key: "user.name"
+      - key: "enduser.email"
         action: delete
-      - key: "user.email"
-        action: delete
-      - key: "user.full_name"
-        action: delete
+      - key: "deployment.environment.name"
+        action: upsert
+        value: "prod"
+      - key: "telemetry_source"
+        action: upsert
+        value: "client"
   batch:
     timeout: "5s"
 
 exporters:
-  otlp_grpc/traces:
-    endpoint: "tempo.example.com:4317"
+  otlp_grpc:
+    endpoint: "collector:4317"
     tls:
-      insecure: false
-      insecure_skip_verify: false
-    timeout: "10s"
-    compression: "gzip"
-    sending_queue:
-      queue_size: 1000
-    retry_on_failure:
-      enabled: true
-      initial_interval: "5s"
-      max_elapsed_time: "1m0s"
-      max_interval: "30s"
-  otlp_http/logs:
-    logs_endpoint: "https://loki.example.com/otlp/v1/logs"
-    tls:
-      insecure: false
-      insecure_skip_verify: false
-    headers:
-      - name: "X-Scope-OrgID"
-        value: "tenant-1"
+      insecure: true
     timeout: "10s"
     compression: "gzip"
     sending_queue:
@@ -99,10 +73,8 @@ extensions:
     required_scope: "telemetry:write"
     required_claims: ["sub", "preferred_username"]
     claim_attributes:
-      "sub": "user.id"
-      "preferred_username": "user.name"
-      "email": "user.email"
-      "name": "user.full_name"
+      "sub": "enduser.id"
+      "email": "enduser.email"
     clock_skew: "1m0s"
     rejection_log_interval: "1m0s"
 
@@ -112,15 +84,14 @@ service:
     # The process's own identity, on its logs and on target_info at :8888.
     # service.version is the build's, which the collector adds itself.
     resource:
-      "service.name": "collector-eu"
-      "team": "obs"
+      "service.name": "otlp-collector-oidc"
     logs:
       level: "info"
       encoding: "json"
-      output_paths: []
+      output_paths: ["stdout"]
       error_output_paths: ["stderr"]
       # Own logs to the logs upstream (LOG_OUTPUT), as the SDK's schema has it.
-      processors: [{"batch":{"exporter":{"otlp":{"protocol":"http/protobuf","endpoint":"https://loki.example.com/otlp/v1/logs","headers":[{"name":"X-Scope-OrgID","value":"tenant-1"}],"compression":"gzip","timeout":10000}}}}]
+      processors: [{"batch":{"exporter":{"otlp":{"protocol":"grpc","endpoint":"http://collector:4317","insecure":true,"compression":"gzip","timeout":10000}}}}]
     metrics:
       readers:
         - pull:
@@ -132,8 +103,8 @@ service:
     traces:
       receivers: [otlpsingleport]
       processors: [memory_limiter, attributes/identity, resource/identity, batch]
-      exporters: [otlp_grpc/traces]
+      exporters: [otlp_grpc]
     logs:
       receivers: [otlpsingleport]
       processors: [memory_limiter, attributes/identity, resource/identity, batch]
-      exporters: [otlp_http/logs]
+      exporters: [otlp_grpc]

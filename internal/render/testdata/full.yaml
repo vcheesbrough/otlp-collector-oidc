@@ -22,6 +22,41 @@ processors:
     check_interval: 1s
     limit_mib: 512
     spike_limit_mib: 128
+  # Identity from the token, on every span and log record (identity.go).
+  attributes/identity:
+    actions:
+      - key: "user.id"
+        action: delete
+      - key: "user.id"
+        action: upsert
+        from_context: "auth.user.id"
+      - key: "user.name"
+        action: delete
+      - key: "user.name"
+        action: upsert
+        from_context: "auth.user.name"
+      - key: "user.email"
+        action: delete
+      - key: "user.email"
+        action: upsert
+        from_context: "auth.user.email"
+      - key: "user.full_name"
+        action: delete
+      - key: "user.full_name"
+        action: upsert
+        from_context: "auth.user.full_name"
+  # No identity on the resource but the token's (on the spans and records),
+  # and the deployment's static attributes over the client's.
+  resource/identity:
+    attributes:
+      - key: "user.id"
+        action: delete
+      - key: "user.name"
+        action: delete
+      - key: "user.email"
+        action: delete
+      - key: "user.full_name"
+        action: delete
   batch:
     timeout: "200ms"
 
@@ -51,6 +86,11 @@ extensions:
     jwks_refresh: "1h0m0s"
     required_scope: "otlp:send"
     required_claims: ["sub", "email"]
+    claim_attributes:
+      "sub": "user.id"
+      "preferred_username": "user.name"
+      "email": "user.email"
+      "name": "user.full_name"
     clock_skew: "0s"
     rejection_log_interval: "10s"
 
@@ -78,9 +118,9 @@ service:
   pipelines:
     traces:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter, attributes/identity, resource/identity, batch]
       exporters: [otlp_grpc]
     logs:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter, attributes/identity, resource/identity, batch]
       exporters: [otlp_grpc]

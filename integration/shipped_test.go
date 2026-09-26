@@ -3,6 +3,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"maps"
 	"net/http"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"google.golang.org/grpc/codes"
@@ -32,6 +34,8 @@ type shipped struct {
 	sink      *harness.Sink
 	issuer    *harness.Issuer
 	clients   clients
+	// pool trusts the listener's certificate, for clients of other tokens.
+	pool *x509.CertPool
 }
 
 func startShipped(t *testing.T, env map[string]string) shipped {
@@ -63,7 +67,7 @@ func startShippedWith(t *testing.T, sink *harness.Sink, env map[string]string, c
 	}
 	cl := newClients(t, c.ListenAddr, cert.Pool, iss.Sign(t, jose.RS256, tokenClaims))
 	awaitReady(t, cl)
-	return shipped{collector: c, sink: sink, issuer: iss, clients: cl}
+	return shipped{collector: c, sink: sink, issuer: iss, clients: cl, pool: cert.Pool}
 }
 
 // TestShipped runs every scenario of the shipped shape against one process.
@@ -193,24 +197,52 @@ func fidelityScenarios(env shipped) func(*testing.T) {
 }
 
 // fidelityPayload is the request to send for s and the protobuf bytes of the
-// resource the sink must receive.
+// resource the sink must receive: exactly what was sent, plus the identity
+// the collector stamps on every span and record from the shipped token.
 func fidelityPayload(t *testing.T, s harness.Signal, marker string) (harness.Message, []byte) {
 	t.Helper()
 	switch s {
 	case harness.SignalTraces:
 		req := harness.Traces(marker, 3)
-		want, err := (&ptrace.ProtoMarshaler{}).MarshalTraces(req.Traces())
+		expected := ptrace.NewTraces()
+		req.Traces().CopyTo(expected)
+		for _, rs := range expected.ResourceSpans().All() {
+			for _, ss := range rs.ScopeSpans().All() {
+				for _, span := range ss.Spans().All() {
+					stampShippedIdentity(span.Attributes())
+				}
+			}
+		}
+		want, err := (&ptrace.ProtoMarshaler{}).MarshalTraces(expected)
 		require.NoError(t, err)
 		return req, want
 	case harness.SignalLogs:
 		req := harness.Logs(marker, 3)
-		want, err := (&plog.ProtoMarshaler{}).MarshalLogs(req.Logs())
+		expected := plog.NewLogs()
+		req.Logs().CopyTo(expected)
+		for _, rl := range expected.ResourceLogs().All() {
+			for _, sl := range rl.ScopeLogs().All() {
+				for _, lr := range sl.LogRecords().All() {
+					stampShippedIdentity(lr.Attributes())
+				}
+			}
+		}
+		want, err := (&plog.ProtoMarshaler{}).MarshalLogs(expected)
 		require.NoError(t, err)
 		return req, want
 	case harness.SignalMetrics:
 		require.FailNow(t, "metrics are not wired in the shipped shape")
 	}
 	return nil, nil
+}
+
+// stampShippedIdentity adds what the default CLAIM_ATTRIBUTES make of the
+// issuer's default claims, in the order the processor upserts them.
+func stampShippedIdentity(attrs pcommon.Map) {
+	attrs.PutStr("user.id", "user-1")
+	attrs.PutStr("user.name", "alice")
+	attrs.PutStr("user.email", "alice@example.com")
+	attrs.PutStr("user.full_name", "Alice Example")
 }
 
 func receivedProto(t *testing.T, r harness.Received, s harness.Signal, marker string) ([]byte, bool) {

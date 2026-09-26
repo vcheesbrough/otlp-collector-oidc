@@ -17,6 +17,23 @@ processors:
     check_interval: 1s
     limit_mib: 64
     spike_limit_mib: 16
+  # Identity from the token, on every span and log record (identity.go).
+  attributes/identity:
+    actions:
+      - key: "a\"b$${x}"
+        action: delete
+      - key: "a\"b$${x}"
+        action: upsert
+        from_context: "auth.a\"b$${x}"
+  # No identity on the resource but the token's (on the spans and records),
+  # and the deployment's static attributes over the client's.
+  resource/identity:
+    attributes:
+      - key: "a\"b$${x}"
+        action: delete
+      - key: "k$${y}"
+        action: upsert
+        value: "v\"$${z}"
   batch:
     timeout: "5s"
 
@@ -48,6 +65,8 @@ extensions:
     jwks_refresh: "10m0s"
     required_scope: "$$$${x}$$"
     required_claims: ["sub", "'quoted'", "#hash"]
+    claim_attributes:
+      "sub": "a\"b$${x}"
     clock_skew: "1m0s"
     rejection_log_interval: "1m0s"
 
@@ -76,9 +95,9 @@ service:
   pipelines:
     traces:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter, attributes/identity, resource/identity, batch]
       exporters: [otlp_grpc]
     logs:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter, attributes/identity, resource/identity, batch]
       exporters: [otlp_grpc]
