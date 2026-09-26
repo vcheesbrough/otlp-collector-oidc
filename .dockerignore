@@ -6,3 +6,6 @@
 !internal/
 !receiver/
 !extension/
+!LICENSE
+!LICENSE-TIER.md
+!scripts/third-party-notices.sh

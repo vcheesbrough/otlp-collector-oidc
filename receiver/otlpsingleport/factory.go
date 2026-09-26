@@ -2,6 +2,7 @@ package otlpsingleport
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"go.opentelemetry.io/collector/component"
@@ -89,7 +90,7 @@ func (r *registry) release(cfg *Config) {
 func newReceiver(set receiver.Settings, cfg *Config) (*singlePort, error) {
 	tb, err := metadata.NewTelemetryBuilder(set.TelemetrySettings)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating the receiver's telemetry: %w", err)
 	}
 	refused := newRefusals(tb, set.ID.String())
 	var obsGRPC *receiverhelper.ObsReport
@@ -99,7 +100,7 @@ func newReceiver(set receiver.Settings, cfg *Config) (*singlePort, error) {
 		ReceiverCreateSettings: set,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating the grpc obsreport: %w", err)
 	}
 	obsHTTP, err := receiverhelper.NewObsReport(receiverhelper.ObsReportSettings{
 		ReceiverID:             set.ID,
@@ -107,7 +108,7 @@ func newReceiver(set receiver.Settings, cfg *Config) (*singlePort, error) {
 		ReceiverCreateSettings: set,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating the http obsreport: %w", err)
 	}
 	return newSinglePort(singlePortSettings{
 		server:       cfg.ServerConfig,

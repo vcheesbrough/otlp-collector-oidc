@@ -97,6 +97,9 @@ func (k *keySet) refreshFor(ctx context.Context, kid, alg string, generation uin
 		k.missFetched = now
 		k.mu.Unlock()
 		if err := k.refresh(ctx); err != nil {
+			// The token is refused unknown kid, which is counted and
+			// warned about; a failing provider shows in the scheduled
+			// re-read's own warning.
 			return nil
 		}
 	}

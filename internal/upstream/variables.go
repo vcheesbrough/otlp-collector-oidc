@@ -124,6 +124,7 @@ type VariableError struct {
 	Err   error
 }
 
+// Error names the variable, and its value unless the value is secret.
 func (e *VariableError) Error() string {
 	switch {
 	case errors.Is(e.Err, ErrRequired):
@@ -134,6 +135,7 @@ func (e *VariableError) Error() string {
 	return fmt.Sprintf("invalid %s %q: %v", e.Name, e.Value, e.Err)
 }
 
+// Unwrap returns Err.
 func (e *VariableError) Unwrap() error { return e.Err }
 
 // shown is raw as an error may show it: nothing for a secret, and a URL's

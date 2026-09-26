@@ -12,9 +12,9 @@ An OpenTelemetry Collector distribution that authenticates OTLP clients with OID
 It accepts OTLP traces, logs and metrics from user-facing clients — browsers, mobile
 apps — over gRPC and HTTP on a single TLS port, validates a JWT access token from any
 OIDC provider on every request, stamps the provider-attested identity onto the
-telemetry, and forwards plain OTLP to any downstream collector or backend. It is
-pre-release: see [Status](#status) for what exists today, and the
-[design](docs/DESIGN.md) for the whole.
+telemetry, and forwards plain OTLP to any downstream collector or backend: traces and
+logs with the sender's identity, metrics on a separate pipeline that never carries it,
+each signal bounded in what a client can cost.
 
 It refuses anything it cannot attribute: no anonymous access, no API keys, no shared
 secrets, no cookies — a bearer token or nothing. It never lets a client label its own
@@ -32,7 +32,7 @@ docker run --rm -p 4318:4318 \
   -e OIDC_AUDIENCE=your-client-id \
   -e ALLOWED_SERVICE_NAMES='web-app|ios-app' \
   -e OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4317 \
-  ghcr.io/vcheesbrough/otlp-collector-oidc:edge
+  ghcr.io/vcheesbrough/otlp-collector-oidc:latest
 ```
 
 ```sh
@@ -65,7 +65,7 @@ docker run --rm -p 4318:4318 \
   -e OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf \
   -e OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://loki:3100/otlp/v1/logs \
   -e OTEL_EXPORTER_OTLP_LOGS_HEADERS=X-Scope-OrgID=tenant-1 \
-  ghcr.io/vcheesbrough/otlp-collector-oidc:edge
+  ghcr.io/vcheesbrough/otlp-collector-oidc:latest
 ```
 
 ## Configuration
@@ -183,18 +183,21 @@ unit and integration tiers, and the `test-reports` artifact holds the JUnit file
 
 ## Status
 
-Pre-release (`0.x`): single-port OTLP/gRPC and OTLP/HTTP over TLS, every request
-authenticated with an OIDC access token, configured entirely by environment, forwarding
-traces and logs to OTLP/gRPC or OTLP/HTTP upstreams, per signal, set by the standard
-`OTEL_EXPORTER_OTLP_*` variables. The token's identity is stamped onto the
-telemetry — `user.id`, `user.name`, `user.email`, `user.full_name` on every
-span and log record (`CLAIM_ATTRIBUTES`), the deployment's attributes on every
-resource (`CLIENT_RESOURCE_ATTRIBUTES`) — bounds what a client can cost
-(`ALLOWED_SERVICE_NAMES`, timestamp clamps), and its own logs go upstream as OTLP, with
-a dashboard, alerts and runbook. Client metrics are accepted on a separate pipeline
-that never carries identity, allowlisted by name and datapoint key, converted from
-delta to cumulative under a stream cap —
-[board](https://bored.desync.link/boards/otlp-collector-oidc).
+Stable from `1.0.0`: the configuration variables, the token profile and the metric
+names on `:8888` change only with a major version. The image is
+`ghcr.io/vcheesbrough/otlp-collector-oidc`, tagged by version and `:latest`; `:edge`
+follows `main`.
+
+- [Configuration reference](docs/configuration.md) — every variable, generated from
+  the code.
+- [Token profile](docs/token-profile.md) — exactly which tokens are accepted.
+- [Provider guides](docs/providers/README.md) — authentik, with a blueprint.
+- [Proxy guide](docs/proxies/traefik.md) — the contract, and Traefik exactly.
+- [Dashboard](dashboards/otlp-collector-oidc.json), [alerts](alerts/otlp-collector-oidc.yaml)
+  and [runbook](docs/runbook.md).
+- [Design](docs/DESIGN.md) and [decisions](docs/decisions/).
+
+The next piece of work is on the [board](https://bored.desync.link/boards/otlp-collector-oidc).
 
 ## Licence
 

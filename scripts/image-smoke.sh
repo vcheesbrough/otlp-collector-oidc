@@ -18,6 +18,12 @@ fail() {
 
 label=$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image")
 [ "$label" = "$version" ] || fail "OCI version label is '$label', want '$version'"
+# The product's licence and the bundled modules' notices ship in the image.
+docker run --rm --entrypoint /bin/sh "$image" -c '
+	test -s /usr/share/licenses/otlp-collector-oidc/LICENSE &&
+	test -s /usr/share/licenses/otlp-collector-oidc/third-party/MODULES &&
+	test -s /usr/share/licenses/otlp-collector-oidc/third-party/go.opentelemetry.io/collector/otelcol/LICENSE' ||
+	fail "licence or third-party notices missing from the image"
 reported=$(docker run --rm "$image" version)
 [ "$reported" = "$version" ] || fail "'version' reports '$reported', want '$version'"
 

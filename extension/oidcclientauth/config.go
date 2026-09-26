@@ -24,9 +24,11 @@ const (
 // supportedAlgorithms is every alg the token profile may allow: RSA PKCS#1
 // v1.5 and ECDSA. none, HMAC and anything else are never accepted, whatever
 // the configuration says.
-var supportedAlgorithms = []jose.SignatureAlgorithm{
-	jose.RS256, jose.RS384, jose.RS512,
-	jose.ES256, jose.ES384, jose.ES512,
+func supportedAlgorithms() []jose.SignatureAlgorithm {
+	return []jose.SignatureAlgorithm{
+		jose.RS256, jose.RS384, jose.RS512,
+		jose.ES256, jose.ES384, jose.ES512,
+	}
 }
 
 // Config is the YAML shape of the authenticator.
@@ -148,7 +150,7 @@ func (c *Config) algorithms() ([]jose.SignatureAlgorithm, error) {
 	out := make([]jose.SignatureAlgorithm, 0, len(c.Algorithms))
 	for _, name := range c.Algorithms {
 		alg := jose.SignatureAlgorithm(name)
-		if !slices.Contains(supportedAlgorithms, alg) {
+		if !slices.Contains(supportedAlgorithms(), alg) {
 			return nil, fmt.Errorf("%w: %q", ErrUnsupportedAlgorithms, name)
 		}
 		out = append(out, alg)
@@ -157,8 +159,9 @@ func (c *Config) algorithms() ([]jose.SignatureAlgorithm, error) {
 }
 
 func createDefaultConfig() component.Config {
-	algs := make([]string, len(supportedAlgorithms))
-	for i, a := range supportedAlgorithms {
+	supported := supportedAlgorithms()
+	algs := make([]string, len(supported))
+	for i, a := range supported {
 		algs[i] = string(a)
 	}
 	return &Config{

@@ -2,6 +2,7 @@ package oidcclientauth
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -32,7 +33,7 @@ func newAuthenticator(set extension.Settings, cfg *Config, httpClient *http.Clie
 	}
 	tb, err := metadata.NewTelemetryBuilder(set.TelemetrySettings)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating the authenticator's telemetry: %w", err)
 	}
 	a := &authenticator{
 		verifier: &verifier{

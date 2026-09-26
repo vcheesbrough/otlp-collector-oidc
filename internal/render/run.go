@@ -146,6 +146,8 @@ func ownLogsUndelivered(col *otelcol.Collector, err error) bool {
 }
 
 func onlyLoggerShutdown(err error) bool {
+	// This node only, not errors.As: the walk reads each level's prefix, and
+	// errors.As would find a join nested deeper, inside the logger's error.
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {
 		for _, e := range joined.Unwrap() {
 			if !onlyLoggerShutdown(e) {

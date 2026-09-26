@@ -94,6 +94,9 @@ const notReadyRetryAfter = 5 * time.Second
 func newErrorHandler(refused *refusals) func(w http.ResponseWriter, r *http.Request, msg string, httpStatus int) {
 	return func(w http.ResponseWriter, r *http.Request, msg string, httpStatus int) {
 		switch {
+		// confighttp hands the handler the error's text, not the error, so
+		// the not-ready refusal is told apart by its text; the extension
+		// exports it as ErrNotReady so the two cannot drift.
 		case httpStatus == http.StatusUnauthorized && msg == oidcclientauth.ErrNotReady.Error():
 			writeNotReady(w, r, msg)
 		case httpStatus == http.StatusUnauthorized:

@@ -155,7 +155,8 @@ rendered from the environment by `run`). One Go module.
   them small, accept interfaces and return concrete types; assert compliance at
   compile time (`var _ extensionauth.Server = (*authenticator)(nil)`); inject clocks,
   HTTP clients and key sets; no package-level mutable state (the exceptions: the
-  linker-set version in `internal/build`, and in test code the integration harness's
+  linker-set version in `internal/build`, `//go:embed` data (which Go requires be a
+  `var`), and in test code the integration harness's
   set of ports it has handed out, which every parallel test must share); no `init()`.
 - **Concurrency.** Every goroutine has an owner and an exit path (`context`,
   `errgroup`, or a server's `Stop`), never fire-and-forget; mutexes are value fields
@@ -233,3 +234,13 @@ collector, and `:8888` is the collector's own contract; and it emits no traces o
 own — the request path is the stock receiver and processors, whose spans would
 describe the collector's internals rather than anything an operator acts on. Its logs
 are the one self-signal it pushes, as OTLP, to the logs upstream.
+
+**Further deviations recorded at the `1.0.0` sign-off (card #435):**
+`OTEL_EXPORTER_OTLP_ENDPOINT` is required, not optional telemetry, because forwarding
+is the product's function (§1.8's "absent is off" does not apply to it; `LOG_OUTPUT`
+turns the own-logs export off instead); what `filter` drops after the client's `200` is
+not reported as OTLP partial success (DESIGN §5), only counted on `:8888`; and there is
+no request-duration histogram (the D of RED): the collector's internal telemetry
+exports none at the `normal` level, and raising `service::telemetry::metrics::level`
+to `detailed` would, at the cost of per-route series — the lever if latency ever needs
+charting.
