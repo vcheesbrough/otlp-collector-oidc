@@ -40,6 +40,18 @@ processors:
       - key: "user.full_name"
         action: upsert
         from_context: "auth.user.full_name"
+  # No identity on the resource but the token's (on the spans and records),
+  # and the deployment's static attributes over the client's.
+  resource/identity:
+    attributes:
+      - key: "user.id"
+        action: delete
+      - key: "user.name"
+        action: delete
+      - key: "user.email"
+        action: delete
+      - key: "user.full_name"
+        action: delete
   batch:
     timeout: "5s"
 
@@ -119,9 +131,9 @@ service:
   pipelines:
     traces:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, attributes/identity, batch]
+      processors: [memory_limiter, attributes/identity, resource/identity, batch]
       exporters: [otlp_grpc/traces]
     logs:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, attributes/identity, batch]
+      processors: [memory_limiter, attributes/identity, resource/identity, batch]
       exporters: [otlp_http/logs]

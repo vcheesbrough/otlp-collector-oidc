@@ -25,20 +25,25 @@ processors:
       - key: "enduser.id"
         action: upsert
         from_context: "auth.enduser.id"
-      - key: "enduser.groups"
+      - key: "enduser.email"
         action: delete
-      - key: "enduser.groups"
+      - key: "enduser.email"
         action: upsert
-        from_context: "auth.enduser.groups"
-  # The deployment's static attributes, on every client resource.
-  resource/deployment:
+        from_context: "auth.enduser.email"
+  # No identity on the resource but the token's (on the spans and records),
+  # and the deployment's static attributes over the client's.
+  resource/identity:
     attributes:
+      - key: "enduser.id"
+        action: delete
+      - key: "enduser.email"
+        action: delete
       - key: "deployment.environment.name"
+        action: upsert
         value: "prod"
-        action: upsert
       - key: "telemetry_source"
-        value: "client"
         action: upsert
+        value: "client"
   batch:
     timeout: "5s"
 
@@ -69,7 +74,7 @@ extensions:
     required_claims: ["sub", "preferred_username"]
     claim_attributes:
       "sub": "enduser.id"
-      "groups": "enduser.groups"
+      "email": "enduser.email"
     clock_skew: "1m0s"
     rejection_log_interval: "1m0s"
 
@@ -97,9 +102,9 @@ service:
   pipelines:
     traces:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, attributes/identity, resource/deployment, batch]
+      processors: [memory_limiter, attributes/identity, resource/identity, batch]
       exporters: [otlp_grpc]
     logs:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, attributes/identity, resource/deployment, batch]
+      processors: [memory_limiter, attributes/identity, resource/identity, batch]
       exporters: [otlp_grpc]

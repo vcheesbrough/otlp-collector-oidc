@@ -13,6 +13,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"google.golang.org/grpc/codes"
 
 	"github.com/vcheesbrough/otlp-collector-oidc/integration/harness"
@@ -204,6 +205,12 @@ receivers:
       key_file: %[2]q
     auth:
       authenticator: oidcclientauth
+processors:
+  attributes:
+    actions:
+      - key: deployment.environment.name
+        from_context: auth.deployment.environment.name
+        action: upsert
 exporters:
   otlp_grpc:
     endpoint: %[3]q
@@ -215,6 +222,8 @@ extensions:
   oidcclientauth:
     issuer_url: %[4]q
     audience: %[5]q
+    resource_attributes:
+      deployment.environment.name: mounted
 service:
   extensions: [health_check, oidcclientauth]
   telemetry:
@@ -228,12 +237,14 @@ service:
   pipelines:
     traces:
       receivers: [otlpsingleport]
+      processors: [attributes]
       exporters: [otlp_grpc]
 `
 
 // TestMountedConfig runs a COLLECTOR_CONFIG file with none of the required
 // variables set: rendering is skipped, the file's pipeline runs, and both
-// custom components work from it.
+// custom components work from it, the authenticator's resource_attributes
+// reaching the span through auth.<key>.
 func TestMountedConfig(t *testing.T) {
 	t.Parallel()
 	cert := harness.NewCertificate(t)
@@ -257,10 +268,14 @@ func TestMountedConfig(t *testing.T) {
 			marker := "mounted/" + p.String()
 			got := cl.export(t.Context(), t, p, harness.SignalTraces, harness.Traces(marker, 1))
 			require.Equal(t, codes.OK, got.code, got.message)
+			var td ptrace.Traces
 			require.Eventually(t, func() bool {
-				_, ok := harness.FindTraces(sink.Received().Traces, marker)
+				var ok bool
+				td, ok = harness.FindTraces(sink.Received().Traces, marker)
 				return ok
 			}, eventually, 10*time.Millisecond, "%s never reached the sink", marker)
+			env, _ := td.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Attributes().Get("deployment.environment.name")
+			assert.Equal(t, "mounted", env.Str(), "resource_attributes reach the pipeline as auth.<key>")
 		})
 	}
 }

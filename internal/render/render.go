@@ -36,6 +36,7 @@ func parseTemplate() (*template.Template, error) {
 			"list":               quoteList,
 			"identityActions":    identityActions,
 			"identityProcessors": identityProcessors,
+			"resourceActions":    resourceActions,
 			"join":               func(items []string) string { return strings.Join(items, ", ") },
 		}).
 		Parse(templateText)

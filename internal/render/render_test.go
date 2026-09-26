@@ -112,7 +112,7 @@ var shapes = map[string]map[string]string{
 		"OIDC_ISSUER_URL":             "https://idp.example.com/",
 		"OIDC_AUDIENCE":               "telemetry",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317",
-		"CLAIM_ATTRIBUTES":            "sub=enduser.id, groups=enduser.groups",
+		"CLAIM_ATTRIBUTES":            "sub=enduser.id, email=enduser.email",
 		"CLIENT_RESOURCE_ATTRIBUTES":  "deployment.environment.name=prod,telemetry_source=client",
 	},
 	// Values that would break naive substitution: quotes, a newline, YAML

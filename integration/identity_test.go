@@ -26,6 +26,8 @@ func forged(resource, item pcommon.Map) {
 	resource.PutStr("deployment.environment.name", "forged")
 	resource.PutStr("telemetry_source", "forged")
 	resource.PutStr("client.kept", "yes")
+	resource.PutStr("user.id", "forged-on-resource")
+	resource.PutStr("user.email", "forged@example.com")
 	item.PutStr("user.id", "forged-id")
 	item.PutStr("user.email", "forged@example.com")
 	item.PutStr("app.kept", "yes")
@@ -118,7 +120,7 @@ func TestIdentity(t *testing.T) {
 					"telemetry_source":            "client",
 					"client.kept":                 "yes",
 					harness.MarkerKey:             marker,
-				}, got.resource, "the deployment's attributes overwrite the client's; the rest is the client's")
+				}, got.resource, "the deployment's attributes overwrite the client's, identity is removed from the resource, the rest is the client's")
 				for _, item := range got.items {
 					assert.Equal(t, "user-1", item["user.id"])
 					assert.Equal(t, "alice", item["user.name"])
@@ -128,6 +130,18 @@ func TestIdentity(t *testing.T) {
 					for k := range item {
 						assert.NotContains(t, k, "auth.", "a temporary copy survived: %v", item)
 					}
+				}
+			}
+		})
+		t.Run("empty and non-string claims/"+p.String(), func(t *testing.T) {
+			marker := "identity/odd/" + p.String()
+			odd := newClients(t, env.collector.ListenAddr, env.pool, env.issuer.Sign(t, jose.RS256, with(env.issuer.Claims(), harness.Claims{"email": "", "name": 42})))
+			sendForged(t, odd, p, marker)
+			for _, got := range awaitStamped(t, sink, marker) {
+				for _, item := range got.items {
+					assert.Equal(t, "user-1", item["user.id"])
+					assert.NotContains(t, item, "user.email", "an empty claim is not stamped")
+					assert.NotContains(t, item, "user.full_name", "a non-string claim is not stamped")
 				}
 			}
 		})

@@ -212,7 +212,7 @@ adds a metric adds its panel, and where warranted its alert and runbook entry, i
 same PR, and `TestArtefactMetrics` proves every name they query is exported.
 Iteration 7 (`0.7.0`) stamps the token's identity (`CLAIM_ATTRIBUTES`, via
 `attributes/identity`) and the deployment's attributes (`CLIENT_RESOURCE_ATTRIBUTES`,
-via `resource/deployment`) onto every span and log record (`internal/render/identity.go`).
+via `resource/identity`, which also removes any identity a client put on the resource) onto every span and log record (`internal/render/identity.go`).
 
 **Deviations from the `observability` skill §2, by design (DESIGN §3.4):** the
 product's own metrics are a Prometheus pull on `:8888`, not an OTLP push — it is a

@@ -107,6 +107,9 @@ type SourceSettings struct {
 // claim to one attribute.
 func (s IdentitySettings) Validate() error {
 	var errs []error
+	if len(s.ClaimAttributes) == 0 {
+		errs = append(errs, errors.New("CLAIM_ATTRIBUTES must map at least one claim, such as sub=user.id"))
+	}
 	targets := map[string]string{}
 	for _, kv := range s.ClaimAttributes {
 		switch {
@@ -120,8 +123,11 @@ func (s IdentitySettings) Validate() error {
 		targets[kv.Value] = kv.Key
 	}
 	for _, kv := range s.ClientResourceAttrs {
-		if clientOwned(kv.Key) {
+		switch {
+		case clientOwned(kv.Key):
 			errs = append(errs, fmt.Errorf("CLIENT_RESOURCE_ATTRIBUTES: %s is the client's", kv.Key))
+		case targets[kv.Key] != "":
+			errs = append(errs, fmt.Errorf("CLIENT_RESOURCE_ATTRIBUTES: %s is the attribute of claim %s", kv.Key, targets[kv.Key]))
 		}
 	}
 	return errors.Join(errs...)

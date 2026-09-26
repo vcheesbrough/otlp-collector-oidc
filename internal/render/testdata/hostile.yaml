@@ -25,12 +25,15 @@ processors:
       - key: "a\"b$${x}"
         action: upsert
         from_context: "auth.a\"b$${x}"
-  # The deployment's static attributes, on every client resource.
-  resource/deployment:
+  # No identity on the resource but the token's (on the spans and records),
+  # and the deployment's static attributes over the client's.
+  resource/identity:
     attributes:
+      - key: "a\"b$${x}"
+        action: delete
       - key: "k$${y}"
-        value: "v\"$${z}"
         action: upsert
+        value: "v\"$${z}"
   batch:
     timeout: "5s"
 
@@ -92,9 +95,9 @@ service:
   pipelines:
     traces:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, attributes/identity, resource/deployment, batch]
+      processors: [memory_limiter, attributes/identity, resource/identity, batch]
       exporters: [otlp_grpc]
     logs:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, attributes/identity, resource/deployment, batch]
+      processors: [memory_limiter, attributes/identity, resource/identity, batch]
       exporters: [otlp_grpc]

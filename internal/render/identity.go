@@ -29,12 +29,29 @@ func identityActions(claims KeyValueList) []attributeAction {
 	return out
 }
 
+// resourceAction is one action of the resource processor.
+type resourceAction struct {
+	Key    string
+	Action string
+	Value  string
+}
+
+// resourceActions deletes every claim target from the resource, where a
+// client could otherwise forge identity a backend reads like the span's, and
+// upserts each of the deployment's attributes over the client's.
+func resourceActions(claims, clientResource KeyValueList) []resourceAction {
+	out := make([]resourceAction, 0, len(claims)+len(clientResource))
+	for _, kv := range claims {
+		out = append(out, resourceAction{Key: kv.Value, Action: "delete"})
+	}
+	for _, kv := range clientResource {
+		out = append(out, resourceAction{Key: kv.Key, Action: "upsert", Value: kv.Value})
+	}
+	return out
+}
+
 // identityProcessors is the processor chain of every client traces and logs
 // pipeline, from one list so the two cannot diverge.
-func identityProcessors(clientResource KeyValueList) []string {
-	chain := []string{"memory_limiter", "attributes/identity"}
-	if len(clientResource) > 0 {
-		chain = append(chain, "resource/deployment")
-	}
-	return append(chain, "batch")
+func identityProcessors() []string {
+	return []string{"memory_limiter", "attributes/identity", "resource/identity", "batch"}
 }

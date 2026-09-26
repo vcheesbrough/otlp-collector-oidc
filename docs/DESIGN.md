@@ -44,7 +44,7 @@ and overrides it for one error only, not-ready → **503** (§3.3). Second,
 any client ──► [ consumer's proxy, or TLS here ] ──► otlp-collector-oidc ──► any OTLP endpoint
  bearer JWT                                          ├ oidcclientauth   the authenticator extension
                                                      ├ otlpsingleport   ONE TLS port: gRPC + HTTP /v1/{traces,logs,metrics}
-                                                     ├ traces/logs:  memory_limiter · attributes(identity) · transform · filter · batch
+                                                     ├ traces/logs:  memory_limiter · attributes(identity) · resource(identity) · transform · filter · batch
                                                      ├ metrics:      memory_limiter · attributes(static only) · transform · filter · deltatocumulative · batch
                                                      ├ otlp exporter  (gRPC or HTTP, TLS or plaintext, queue + retry)
                                                      └ its own logs ──► the same logs upstream, as OTLP; own metrics on :8888
@@ -229,10 +229,13 @@ Implements `extensionauth.Server`.
 
 **`resource_attributes` is optional; `deployment.environment.name` and the estate's
 path marker (`telemetry_source=client`) are its usual content.**
-Every key given is **overwritten** on every signal — `attributes` upserts it from
-`auth.<key>` onto the span/log/datapoint, `transform` copies it to
-`resource.attributes` and deletes the temporary copy — so a dev client cannot label
-spans `prod` once the deployment has said which it is. A key not given is left to the
+Every key given is **overwritten** on every resource — as built, the shipped pipeline
+sets `CLIENT_RESOURCE_ATTRIBUTES` with the stock `resource` processor from the literal
+values (§5), and the authenticator's `resource_attributes` map is for a mounted
+pipeline that wants them from `auth.<key>` — so a dev client cannot label spans
+`prod` once the deployment has said which it is. The same processor deletes every
+`claim_attributes` target from the resource, so identity is only ever the token's,
+on the span or record. A key not given is left to the
 client, like every other resource attribute. Two are deliberately never in this map:
 `service.name` is the client's (bounded by `ALLOWED_SERVICE_NAMES`) and
 `service.version` is the client build's; the deployment knows neither.
@@ -244,8 +247,9 @@ All stock components, rendered from an embedded template at startup (§6).
 - **Traces and logs.** `attributes/identity` deletes whatever the client sent under
   each `CLAIM_ATTRIBUTES` target and upserts it from `from_context: auth.<target>`,
   so a claim the token lacks leaves the attribute absent rather than forged;
-  `resource/deployment` upserts the `CLIENT_RESOURCE_ATTRIBUTES` values onto every
-  resource (as built: the stock `resource` processor with the literal values, not
+  `resource/identity` deletes every claim target from the resource and upserts the
+  `CLIENT_RESOURCE_ATTRIBUTES` values onto it (as built: the stock `resource`
+  processor with the literal values, not
   an auth-context copy lifted by `transform`, so no temporary copy ever exists; the
   authenticator's `resource_attributes` stays available to a mounted pipeline);
   `transform` clamps far-future timestamps; `filter` drops
