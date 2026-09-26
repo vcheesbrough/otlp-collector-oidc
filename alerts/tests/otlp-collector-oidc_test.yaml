@@ -1,0 +1,74 @@
+# promtool test rules for ../otlp-collector-oidc.yaml (make alerts-check).
+rule_files:
+  - ../otlp-collector-oidc.yaml
+evaluation_interval: 1m
+
+tests:
+  # The process reports for 30 minutes and then stops: absent after the
+  # for:, and still absent two hours later.
+  - interval: 1m
+    input_series:
+      - series: 'target_info{job="c",instance="a:8888",service_name="otlp-collector-oidc",deployment_environment_name="prod"}'
+        values: '1x30 _x150'
+      - series: 'target_info{job="c",instance="b:8888",service_name="otlp-collector-oidc",deployment_environment_name="dev"}'
+        values: '1x180'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: OTLPCollectorOIDCAbsent
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: OTLPCollectorOIDCAbsent
+        exp_alerts: &absent
+          - exp_labels: {severity: critical, deployment_environment_name: prod}
+            exp_annotations:
+              summary: "otlp-collector-oidc in prod has stopped reporting"
+              runbook_url: https://github.com/vcheesbrough/otlp-collector-oidc/blob/main/docs/runbook.md#otlpcollectoroidcabsent
+      - eval_time: 170m
+        alertname: OTLPCollectorOIDCAbsent
+        exp_alerts: *absent
+
+  # Not ready, sustained; tokens refused for a missing claim above the rate.
+  - interval: 1m
+    input_series:
+      - series: 'target_info{job="c",instance="a:8888",service_name="otlp-collector-oidc",deployment_environment_name="prod"}'
+        values: '1x40'
+      - series: 'otelcol_oidcclientauth_rejections{job="c",instance="a:8888",reason="not_ready"}'
+        values: '0+30x40'
+      - series: 'otelcol_oidcclientauth_rejections{job="c",instance="a:8888",reason="missing_claim"}'
+        values: '0+30x40'
+      - series: 'otelcol_oidcclientauth_rejections{job="c",instance="a:8888",reason="no_token"}'
+        values: '0+600x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: OTLPCollectorOIDCNotReady
+        exp_alerts:
+          - exp_labels: {severity: critical, deployment_environment_name: prod}
+            exp_annotations:
+              summary: "otlp-collector-oidc in prod answers not ready: the OIDC provider is unreachable"
+              runbook_url: https://github.com/vcheesbrough/otlp-collector-oidc/blob/main/docs/runbook.md#otlpcollectoroidcnotready
+      - eval_time: 35m
+        alertname: OTLPCollectorOIDCTokensRefused
+        exp_alerts:
+          - exp_labels: {severity: warning, deployment_environment_name: prod, reason: missing_claim}
+            exp_annotations:
+              summary: "otlp-collector-oidc in prod refuses tokens: missing_claim"
+              runbook_url: https://github.com/vcheesbrough/otlp-collector-oidc/blob/main/docs/runbook.md#otlpcollectoroidctokensrefused
+
+  # An exporter gave up once long ago (its counter flat) and now drops with
+  # the queue full: the later loss still fires.
+  - interval: 1m
+    input_series:
+      - series: 'target_info{job="c",instance="a:8888",service_name="otlp-collector-oidc",deployment_environment_name="prod"}'
+        values: '1x30'
+      - series: 'otelcol_exporter_send_failed_spans{job="c",instance="a:8888",exporter="otlp_grpc"}'
+        values: '5x30'
+      - series: 'otelcol_exporter_enqueue_failed_spans{job="c",instance="a:8888",exporter="otlp_grpc"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: OTLPCollectorOIDCExportDropped
+        exp_alerts:
+          - exp_labels: {severity: warning, deployment_environment_name: prod, exporter: otlp_grpc}
+            exp_annotations:
+              summary: "otlp-collector-oidc in prod is dropping data at otlp_grpc"
+              runbook_url: https://github.com/vcheesbrough/otlp-collector-oidc/blob/main/docs/runbook.md#otlpcollectoroidcexportdropped

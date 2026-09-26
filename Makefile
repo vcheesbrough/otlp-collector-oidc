@@ -12,7 +12,7 @@ BIN     := bin/otlp-collector-oidc
 # Unit packages: everything but the integration tier.
 UNIT    := $(shell $(GO) list ./... | grep -v /integration)
 
-.PHONY: all fmt lint vet vuln test integration build image generate generate-check versions-check docs docs-check release-plan-test check
+.PHONY: all fmt lint vet vuln test integration build image generate generate-check versions-check docs docs-check release-plan-test alerts-check check
 
 all: check build
 
@@ -72,5 +72,11 @@ docs-check:
 ## release-plan-test: the rules that decide what a release publishes.
 release-plan-test:
 	scripts/release-plan_test.sh
+
+## alerts-check: the alert rules parse and pass their unit tests (promtool).
+PROMTOOL_IMAGE ?= prom/prometheus:v3.13.1
+alerts-check:
+	docker run --rm -v "$(CURDIR)/alerts:/alerts:ro" --entrypoint promtool $(PROMTOOL_IMAGE) check rules /alerts/otlp-collector-oidc.yaml
+	docker run --rm -v "$(CURDIR)/alerts:/alerts:ro" -w /alerts/tests --entrypoint promtool $(PROMTOOL_IMAGE) test rules otlp-collector-oidc_test.yaml
 
 check: lint vet test generate-check versions-check docs-check release-plan-test

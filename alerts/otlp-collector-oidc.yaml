@@ -8,11 +8,13 @@
 groups:
   - name: otlp-collector-oidc
     rules:
-      # Absence stands in for up: a process that reported an hour ago and
-      # does not now is gone, whether the process died or its scrape broke.
+      # Absence stands in for up: an environment that reported within the
+      # last day and does not now is gone, whether the process died or its
+      # scrape broke. It keeps firing for a day of outage, and covers an
+      # environment from its first scrape.
       - alert: OTLPCollectorOIDCAbsent
         expr: |
-          count by (deployment_environment_name) (target_info{service_name="otlp-collector-oidc"} offset 1h)
+          count by (deployment_environment_name) (max_over_time(target_info{service_name="otlp-collector-oidc"}[1d]))
           unless
           count by (deployment_environment_name) (target_info{service_name="otlp-collector-oidc"})
         for: 10m
@@ -53,15 +55,17 @@ groups:
           runbook_url: https://github.com/vcheesbrough/otlp-collector-oidc/blob/main/docs/runbook.md#otlpcollectoroidctokensrefused
 
       # Telemetry is being lost on the way upstream: given up after retries,
-      # or refused with the queue full.
+      # or refused with the queue full. rate() drops the names, so the four
+      # have the same labels and "or" keeps the first; each is filtered to
+      # the non-zero ones first, so a later kind of loss is not masked.
       - alert: OTLPCollectorOIDCExportDropped
         expr: |
           sum by (deployment_environment_name, exporter) (
             (
-              rate(otelcol_exporter_send_failed_spans[5m])
-              or rate(otelcol_exporter_send_failed_log_records[5m])
-              or rate(otelcol_exporter_enqueue_failed_spans[5m])
-              or rate(otelcol_exporter_enqueue_failed_log_records[5m])
+              rate(otelcol_exporter_send_failed_spans[5m]) > 0
+              or rate(otelcol_exporter_send_failed_log_records[5m]) > 0
+              or rate(otelcol_exporter_enqueue_failed_spans[5m]) > 0
+              or rate(otelcol_exporter_enqueue_failed_log_records[5m]) > 0
             )
             * on (job, instance) group_left(deployment_environment_name) target_info{service_name="otlp-collector-oidc"}
           ) > 0

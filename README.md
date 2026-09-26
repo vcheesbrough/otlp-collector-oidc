@@ -153,6 +153,7 @@ make test          # unit tests
 make integration   # the built binary, driven from outside over both protocols
 make check         # lint, vet, unit tests and the drift checks
 make docs          # regenerate docs/configuration.md after changing a variable
+make alerts-check  # promtool: the alert rules parse and pass alerts/tests
 make image         # the container image
 ```
 

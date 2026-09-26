@@ -29,6 +29,13 @@ import (
 // namespace, and target_info, the build-info series.
 var metricToken = regexp.MustCompile(`\b(otelcol_[a-z0-9_]+|target_info)\b`)
 
+// targetInfoSelector and selectorLabel find the labels a query selects
+// target_info on: the join that filters every panel and alert.
+var (
+	targetInfoSelector = regexp.MustCompile(`target_info\{([^}]*)\}`)
+	selectorLabel      = regexp.MustCompile(`([a-z_]+)\s*(?:=~|!~|!=|=)`)
+)
+
 // artefactQueries is every expr in dashboards/*.json and alerts/*.yaml.
 func artefactQueries(t *testing.T) map[string][]string {
 	t.Helper()
@@ -94,6 +101,7 @@ func TestArtefactMetrics(t *testing.T) {
 		"UPSTREAM_QUEUE_SIZE":        "1",
 		"UPSTREAM_RETRY_MAX_ELAPSED": "1s",
 		"LOG_OUTPUT":                 "stdout",
+		"OTEL_RESOURCE_ATTRIBUTES":   "deployment.environment.name=artefacts",
 	}, nil)
 	deliver(t, env, "artefacts", sink, sink)
 	got := env.clients.present(t, protocolHTTP, bearer("not-a-jwt"), "artefacts/refused")
@@ -103,6 +111,8 @@ func TestArtefactMetrics(t *testing.T) {
 	require.Equal(t, http.StatusMethodNotAllowed, resp.Status)
 
 	sink.SetBehaviour(t, harness.BehaviourDown)
+	// A loop rather than require.Eventually: each pass asserts every export's
+	// answer, which a condition function must not do off the test goroutine.
 	deadline := time.Now().Add(eventually)
 	for missing := failureCounters(); len(missing) > 0; missing = absent(scrape(t, env.collector), failureCounters()) {
 		require.True(t, time.Now().Before(deadline), "never created: %v", missing)
@@ -128,10 +138,19 @@ func TestArtefactMetrics(t *testing.T) {
 		names = append(names, n)
 	}
 	slices.Sort(names)
+	info, ok := samples.Find("target_info")
+	require.True(t, ok, "no target_info on :8888")
+	assert.Equal(t, "artefacts", info.Labels["deployment_environment_name"])
 	for file, exprs := range artefactQueries(t) {
 		for _, expr := range exprs {
 			for _, name := range metricToken.FindAllString(expr, -1) {
 				assert.True(t, exported[name], "%s queries %s, which :8888 does not export\nexpr: %s\nexported: %v", file, name, expr, names)
+			}
+			// job and instance are the scraper's, not on :8888.
+			for _, sel := range targetInfoSelector.FindAllStringSubmatch(expr, -1) {
+				for _, l := range selectorLabel.FindAllStringSubmatch(sel[1], -1) {
+					assert.Contains(t, info.Labels, l[1], "%s selects target_info on %s, which it does not carry\nexpr: %s", file, l[1], expr)
+				}
 			}
 		}
 	}

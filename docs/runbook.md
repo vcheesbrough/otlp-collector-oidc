@@ -7,14 +7,16 @@ none of these is fixed by restarting the container unless the entry says so.
 
 ## OTLPCollectorOIDCAbsent
 
-**Means:** an environment that reported `target_info` an hour ago has not for ten
-minutes. Either the process is gone, or its `:8888` is no longer scraped.
+**Means:** an environment that reported `target_info` within the last day has not
+for ten minutes. Either the process is gone, or its `:8888` is no longer scraped. It
+keeps firing for up to a day of outage.
 
 **Check first:** is the container running and healthy (`docker ps`, the image
 `HEALTHCHECK`)? If it is, the scrape broke: the target list of whatever scrapes
 `:8888`, and whether `SELF_METRICS_ADDR` still points where it scrapes.
 
-**False positive:** an environment deliberately retired. It clears an hour later.
+**False positive:** an environment deliberately retired. It clears a day later;
+silence it until then.
 
 ## OTLPCollectorOIDCNotReady
 
