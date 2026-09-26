@@ -67,6 +67,15 @@ Every `OTEL_EXPORTER_OTLP_*` variable above also has `OTEL_EXPORTER_OTLP_TRACES_
 | `MAX_FUTURE_SKEW` | `5m` | A timestamp further ahead than this is set to the collector's now |
 | `MAX_PAST_AGE` | `48h` | A span started, or a log record timestamped, longer ago than this is dropped and counted (a backend's ingestion window). A span with no start is dropped; a record with no timestamp is kept |
 
+## Client metrics (a separate pipeline, never carrying identity)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ALLOWED_METRIC_NAMES` | *(empty)* | Regular expression the whole metric name must match; empty drops every client metric (each is counted) |
+| `ALLOWED_METRIC_ATTRIBUTE_KEYS` | *(empty)* | Comma-separated datapoint attribute keys kept; every other key is removed, and empty strips them all. `user.*`, `session.*`, `enduser.*` and every `CLAIM_ATTRIBUTES` target are removed even if listed |
+| `MAX_METRIC_STREAMS` | `2000` | Hard cap on the delta streams `deltatocumulative` tracks; a datapoint of a new delta stream beyond it is dropped and counted, not stored. Cumulative and gauge series pass through untracked: the name and key allowlists are what bound them |
+| `DELTA_MAX_STALE` | `10m` | A stream not seen for this long is forgotten, freeing its place under the cap; the processor sweeps once a minute, so it goes within this plus a minute |
+
 ## Resources and batching
 
 | Variable | Default | Meaning |

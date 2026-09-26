@@ -221,6 +221,11 @@ collector, running the fidelity and token-profile tables unchanged; it needs Doc
 which CI's runners and `make integration` have). Iteration 10 (`0.10.0`) bounds what a
 client can cost (`internal/render/bounds.go`: `ALLOWED_SERVICE_NAMES`, now required,
 `MAX_PAST_AGE`, `MAX_FUTURE_SKEW`), with a dashboard panel and runbook entry.
+Iteration 11 (`0.11.0`) accepts client metrics on their own chain
+(`internal/render/metrics.go`), with no identity action, allowlisted by name and key,
+delta to cumulative under `MAX_METRIC_STREAMS`; the structural test
+`TestMetricsPipelineCarriesNoIdentity` and the identifier-cardinality test in
+`TestMetrics` guard the trust boundary. The MVP sign-off is next.
 
 **Deviations from the `observability` skill §2, by design (DESIGN §3.4):** the
 product's own metrics are a Prometheus pull on `:8888`, not an OTLP push — it is a

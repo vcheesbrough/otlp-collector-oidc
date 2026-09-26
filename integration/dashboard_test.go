@@ -89,6 +89,8 @@ func failureCounters() []string {
 		"otelcol_otlpsingleport_requests_refused",
 		"otelcol_processor_filter_spans_filtered",
 		"otelcol_processor_filter_logs_filtered",
+		"otelcol_processor_filter_datapoints_filtered",
+		"otelcol_deltatocumulative_datapoints",
 	}
 }
 
@@ -104,6 +106,7 @@ func TestArtefactMetrics(t *testing.T) {
 		"UPSTREAM_RETRY_MAX_ELAPSED": "1s",
 		"LOG_OUTPUT":                 "stdout",
 		"OTEL_RESOURCE_ATTRIBUTES":   "deployment.environment.name=artefacts",
+		"ALLOWED_METRIC_NAMES":       `app\.requests`,
 	}, nil)
 	deliver(t, env, "artefacts", sink, sink)
 	got := env.clients.present(t, protocolHTTP, bearer("not-a-jwt"), "artefacts/refused")
@@ -113,6 +116,11 @@ func TestArtefactMetrics(t *testing.T) {
 	require.Equal(t, http.StatusMethodNotAllowed, resp.Status)
 	// A resource with no service.name, dropped by the bounds.
 	exportBoth(t, env, protocolHTTP, resourceItem{marker: "artefacts/unnamed", at: time.Now()})
+	// A metric converted, and one dropped by name.
+	sendMetrics(t, env.clients, protocolHTTP, metricsRequest("artefacts", nil,
+		metricSpec{name: "app.requests", kind: kindDeltaSum, value: 1, start: time.Now().Add(-time.Second), at: time.Now()},
+		metricSpec{name: "app.unregistered", kind: kindDeltaSum, value: 1, start: time.Now().Add(-time.Second), at: time.Now()},
+	))
 
 	sink.SetBehaviour(t, harness.BehaviourDown)
 	// A loop rather than require.Eventually: each pass asserts every export's

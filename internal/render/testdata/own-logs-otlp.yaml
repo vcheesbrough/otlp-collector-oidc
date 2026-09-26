@@ -77,11 +77,30 @@ processors:
         action: delete
       - key: "user.full_name"
         action: delete
+  # The client metrics chain (metrics.go): no identity action at all.
+  filter/metrics:
+    error_mode: ignore
+    metrics:
+      resource:
+        - "not IsString(resource.attributes[\"service.name\"]) or not IsMatch(resource.attributes[\"service.name\"], \"^(?:app-.*|integration)$$\")"
+      metric:
+        - "true"
+  transform/metrics:
+    error_mode: ignore
+    metric_statements:
+      - "keep_keys(resource.attributes, [\"service.name\", \"service.version\"])"
+      - "keep_keys(datapoint.attributes, [])"
+      - "keep_keys(scope.attributes, [])"
+      - "keep_keys(metric.metadata, [])"
+      - "set(datapoint.exemplars, nil)"
+  deltatocumulative:
+    max_streams: 2000
+    max_stale: "10m0s"
   batch:
     timeout: "5s"
 
 exporters:
-  otlp_grpc/traces:
+  otlp_grpc/traces_metrics:
     endpoint: "tempo.example.com:4317"
     tls:
       insecure: false
@@ -157,8 +176,12 @@ service:
     traces:
       receivers: [otlpsingleport]
       processors: [memory_limiter, filter/bounds, transform/bounds, attributes/identity, resource/identity, batch]
-      exporters: [otlp_grpc/traces]
+      exporters: [otlp_grpc/traces_metrics]
     logs:
       receivers: [otlpsingleport]
       processors: [memory_limiter, filter/bounds, transform/bounds, attributes/identity, resource/identity, batch]
       exporters: [otlp_http/logs]
+    metrics:
+      receivers: [otlpsingleport]
+      processors: [memory_limiter, filter/metrics, transform/metrics, deltatocumulative, batch]
+      exporters: [otlp_grpc/traces_metrics]

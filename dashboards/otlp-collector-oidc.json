@@ -644,6 +644,178 @@
       ]
     },
     {
+      "id": 18,
+      "type": "row",
+      "title": "Client metrics",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "panels": []
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Streams tracked",
+      "description": "Streams deltatocumulative holds, against MAX_METRIC_STREAMS. At the limit, a client is inventing series.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 28
+      },
+      "targets": [
+        {
+          "expr": "max by (instance) (otelcol_deltatocumulative_streams_tracked * on (job, instance) group_left() target_info{deployment_environment_name=~\"$env\", service_name=~\"$service\"})",
+          "legendFormat": "tracked {{instance}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "expr": "max by (instance) (otelcol_deltatocumulative_streams_limit * on (job, instance) group_left() target_info{deployment_environment_name=~\"$env\", service_name=~\"$service\"})",
+          "legendFormat": "limit {{instance}}",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Datapoints converted and refused",
+      "description": "Datapoints deltatocumulative processed, by error: 'limit' is a stream refused at MAX_METRIC_STREAMS.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 28
+      },
+      "targets": [
+        {
+          "expr": "sum by (error) (rate(otelcol_deltatocumulative_datapoints[$__rate_interval]) * on (job, instance) group_left() target_info{deployment_environment_name=~\"$env\", service_name=~\"$service\"})",
+          "legendFormat": "{{error}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Dropped by name",
+      "description": "Client datapoints dropped for a metric name outside ALLOWED_METRIC_NAMES, or a service.name outside ALLOWED_SERVICE_NAMES. A client build shipping an unregistered metric shows here.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 28
+      },
+      "targets": [
+        {
+          "expr": "sum (rate(otelcol_processor_filter_datapoints_filtered[$__rate_interval]) * on (job, instance) group_left() target_info{deployment_environment_name=~\"$env\", service_name=~\"$service\"})",
+          "legendFormat": "datapoints",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
       "id": 12,
       "type": "row",
       "title": "Process",
@@ -652,7 +824,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 36
       },
       "panels": []
     },
@@ -692,7 +864,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 28
+        "y": 37
       },
       "targets": [
         {
@@ -751,7 +923,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 28
+        "y": 37
       },
       "targets": [
         {
@@ -801,7 +973,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 28
+        "y": 37
       },
       "targets": [
         {
@@ -828,7 +1000,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 45
       },
       "targets": [
         {

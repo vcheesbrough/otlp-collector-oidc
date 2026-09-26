@@ -107,8 +107,8 @@ func TestUpstreamHTTP(t *testing.T) {
 // TestUpstreamTLSVariables covers the remaining TLS knobs in one process:
 // traces go over mTLS to an upstream that requires a client certificate,
 // and logs, through LOGS_INSECURE, in plaintext to an https:// endpoint. The
-// base endpoint is unset: with the traces and logs endpoints set, it is not
-// required, since metrics has no pipeline to need one.
+// base endpoint is unset: with every signal's own endpoint set, it is not
+// required.
 func TestUpstreamTLSVariables(t *testing.T) {
 	t.Parallel()
 	server, client := harness.NewCertificate(t), harness.NewCertificate(t)
@@ -120,6 +120,7 @@ func TestUpstreamTLSVariables(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_CLIENT_KEY":         client.KeyFile,
 		"OTEL_EXPORTER_OTLP_ENDPOINT":           "",
 		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT":    traces.Endpoint(),
+		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT":   traces.Endpoint(),
 		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT":      strings.Replace(logs.Endpoint(), "http://", "https://", 1),
 		"OTEL_EXPORTER_OTLP_LOGS_INSECURE":      "true",
 	}, nil)

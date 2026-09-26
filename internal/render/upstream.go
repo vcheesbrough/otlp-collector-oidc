@@ -19,9 +19,9 @@ type UpstreamSettings struct {
 }
 
 // pipelineSignals is the signals the template gives a pipeline, and so the
-// only ones whose upstream is resolved. The metrics pipeline adds metrics.
+// only ones whose upstream is resolved.
 func pipelineSignals() []upstream.Signal {
-	return []upstream.Signal{upstream.SignalTraces, upstream.SignalLogs}
+	return []upstream.Signal{upstream.SignalTraces, upstream.SignalLogs, upstream.SignalMetrics}
 }
 
 func (u *UpstreamSettings) resolve(lookup Lookup) error {

@@ -82,6 +82,25 @@ processors:
         action: delete
       - key: "user.full_name"
         action: delete
+  # The client metrics chain (metrics.go): no identity action at all.
+  filter/metrics:
+    error_mode: ignore
+    metrics:
+      resource:
+        - "not IsString(resource.attributes[\"service.name\"]) or not IsMatch(resource.attributes[\"service.name\"], \"^(?:app-.*|integration)$$\")"
+      metric:
+        - "not IsMatch(metric.name, \"^(?:app\\\\.(requests|latency))$$\")"
+  transform/metrics:
+    error_mode: ignore
+    metric_statements:
+      - "keep_keys(resource.attributes, [\"service.name\", \"service.version\"])"
+      - "keep_keys(datapoint.attributes, [\"http.route\", \"status\"])"
+      - "keep_keys(scope.attributes, [])"
+      - "keep_keys(metric.metadata, [])"
+      - "set(datapoint.exemplars, nil)"
+  deltatocumulative:
+    max_streams: 500
+    max_stale: "1m0s"
   batch:
     timeout: "200ms"
 
@@ -148,4 +167,8 @@ service:
     logs:
       receivers: [otlpsingleport]
       processors: [memory_limiter, filter/bounds, transform/bounds, attributes/identity, resource/identity, batch]
+      exporters: [otlp_grpc]
+    metrics:
+      receivers: [otlpsingleport]
+      processors: [memory_limiter, filter/metrics, transform/metrics, deltatocumulative, batch]
       exporters: [otlp_grpc]

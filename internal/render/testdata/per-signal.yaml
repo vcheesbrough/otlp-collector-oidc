@@ -77,6 +77,25 @@ processors:
         action: delete
       - key: "user.full_name"
         action: delete
+  # The client metrics chain (metrics.go): no identity action at all.
+  filter/metrics:
+    error_mode: ignore
+    metrics:
+      resource:
+        - "not IsString(resource.attributes[\"service.name\"]) or not IsMatch(resource.attributes[\"service.name\"], \"^(?:app-.*|integration)$$\")"
+      metric:
+        - "true"
+  transform/metrics:
+    error_mode: ignore
+    metric_statements:
+      - "keep_keys(resource.attributes, [\"service.name\", \"service.version\"])"
+      - "keep_keys(datapoint.attributes, [])"
+      - "keep_keys(scope.attributes, [])"
+      - "keep_keys(metric.metadata, [])"
+      - "set(datapoint.exemplars, nil)"
+  deltatocumulative:
+    max_streams: 2000
+    max_stale: "10m0s"
   batch:
     timeout: "5s"
 
@@ -110,6 +129,24 @@ exporters:
     headers:
       - name: "x-scope-orgid"
         value: "b"
+    timeout: "2.5s"
+    compression: "none"
+    sending_queue:
+      queue_size: 50
+    retry_on_failure:
+      enabled: true
+      initial_interval: "5s"
+      max_elapsed_time: "5m0s"
+      max_interval: "30s"
+  otlp_grpc/metrics:
+    endpoint: "mimir.example.com:4317"
+    tls:
+      insecure: true
+    headers:
+      - name: "authorization"
+        value: "Bearer abc"
+      - name: "x-tenant"
+        value: "a"
     timeout: "2.5s"
     compression: "none"
     sending_queue:
@@ -168,3 +205,7 @@ service:
       receivers: [otlpsingleport]
       processors: [memory_limiter, filter/bounds, transform/bounds, attributes/identity, resource/identity, batch]
       exporters: [otlp_http/logs]
+    metrics:
+      receivers: [otlpsingleport]
+      processors: [memory_limiter, filter/metrics, transform/metrics, deltatocumulative, batch]
+      exporters: [otlp_grpc/metrics]

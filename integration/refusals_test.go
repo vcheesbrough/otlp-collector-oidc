@@ -69,7 +69,7 @@ func refusalCounters(env shipped) func(*testing.T) {
 			}},
 			{name: "unwired signal", transport: "http", reason: "unknown_path", send: func(t *testing.T) {
 				t.Helper()
-				resp, err := env.clients.http.Do(t.Context(), http.MethodPost, "/v1/metrics", pb, nil)
+				resp, err := env.clients.http.Do(t.Context(), http.MethodPost, "/v1/profiles", pb, nil)
 				require.NoError(t, err)
 				require.Equal(t, http.StatusNotFound, resp.Status)
 			}},
@@ -81,7 +81,7 @@ func refusalCounters(env shipped) func(*testing.T) {
 			}},
 			{name: "unwired signal", transport: "grpc", reason: "unknown_path", send: func(t *testing.T) {
 				t.Helper()
-				require.Error(t, env.clients.grpc.Export(t.Context(), harness.Metrics("refusals", 1), harness.CompressionNone))
+				require.Error(t, env.clients.grpc.CallUnknownService(t.Context()))
 			}},
 			{name: "message too large", transport: "grpc", reason: "body_too_large", send: func(t *testing.T) {
 				t.Helper()

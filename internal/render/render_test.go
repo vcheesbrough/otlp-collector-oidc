@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 // These are the renderer's secondary, fast checks. What each variable does
@@ -34,32 +35,36 @@ var shapes = map[string]map[string]string{
 	},
 	// Every variable set to something other than its default.
 	"full": {
-		"OIDC_ISSUER_URL":             "https://idp.example.com/",
-		"OIDC_AUDIENCE":               "aud-1",
-		"ALLOWED_SERVICE_NAMES":       "app-.*|integration",
-		"OIDC_DISCOVERY_RETRY":        "5s",
-		"OIDC_JWKS_REFRESH":           "1h",
-		"REQUIRED_SCOPE":              "otlp:send",
-		"REQUIRED_CLAIMS":             " sub , email ,",
-		"CLOCK_SKEW":                  "0s",
-		"REJECTION_LOG_INTERVAL":      "10s",
-		"OTEL_EXPORTER_OTLP_ENDPOINT": "https://upstream.example.com:4317",
-		"LISTEN_ADDR":                 "127.0.0.1:14318",
-		"TLS_CERT_FILE":               "/run/tls/tls.crt",
-		"TLS_KEY_FILE":                "/run/tls/tls.key",
-		"TLS_RELOAD_INTERVAL":         "10s",
-		"MAX_REQUEST_BODY_BYTES":      "1048576",
-		"CORS_ALLOWED_ORIGINS":        "https://app.example.com,https://*.example.org",
-		"MEMORY_LIMIT_MIB":            "512",
-		"MEMORY_SPIKE_LIMIT_MIB":      "128",
-		"BATCH_TIMEOUT":               "200ms",
-		"HEALTH_ADDR":                 "0.0.0.0:13134",
-		"SELF_METRICS_ADDR":           "127.0.0.1:9888",
-		"LOG_LEVEL":                   "debug",
-		"LOG_FORMAT":                  "console",
-		"LOG_OUTPUT":                  "stdout",
-		"OTEL_SERVICE_NAME":           "collector-eu",
-		"OTEL_RESOURCE_ATTRIBUTES":    "deployment.environment.name=prod,host.name=edge%201",
+		"OIDC_ISSUER_URL":               "https://idp.example.com/",
+		"OIDC_AUDIENCE":                 "aud-1",
+		"ALLOWED_SERVICE_NAMES":         "app-.*|integration",
+		"OIDC_DISCOVERY_RETRY":          "5s",
+		"OIDC_JWKS_REFRESH":             "1h",
+		"REQUIRED_SCOPE":                "otlp:send",
+		"REQUIRED_CLAIMS":               " sub , email ,",
+		"CLOCK_SKEW":                    "0s",
+		"REJECTION_LOG_INTERVAL":        "10s",
+		"OTEL_EXPORTER_OTLP_ENDPOINT":   "https://upstream.example.com:4317",
+		"LISTEN_ADDR":                   "127.0.0.1:14318",
+		"TLS_CERT_FILE":                 "/run/tls/tls.crt",
+		"TLS_KEY_FILE":                  "/run/tls/tls.key",
+		"TLS_RELOAD_INTERVAL":           "10s",
+		"MAX_REQUEST_BODY_BYTES":        "1048576",
+		"CORS_ALLOWED_ORIGINS":          "https://app.example.com,https://*.example.org",
+		"MEMORY_LIMIT_MIB":              "512",
+		"MEMORY_SPIKE_LIMIT_MIB":        "128",
+		"BATCH_TIMEOUT":                 "200ms",
+		"HEALTH_ADDR":                   "0.0.0.0:13134",
+		"SELF_METRICS_ADDR":             "127.0.0.1:9888",
+		"LOG_LEVEL":                     "debug",
+		"LOG_FORMAT":                    "console",
+		"LOG_OUTPUT":                    "stdout",
+		"ALLOWED_METRIC_NAMES":          `app\.(requests|latency)`,
+		"ALLOWED_METRIC_ATTRIBUTE_KEYS": "http.route,user.id,session.id,status",
+		"MAX_METRIC_STREAMS":            "500",
+		"DELTA_MAX_STALE":               "1m",
+		"OTEL_SERVICE_NAME":             "collector-eu",
+		"OTEL_RESOURCE_ATTRIBUTES":      "deployment.environment.name=prod,host.name=edge%201",
 	},
 	// Own logs to the logs upstream alone, following a LOGS override to an
 	// HTTP endpoint with its own headers; a service.version in the resource
@@ -277,4 +282,42 @@ func TestReferenceListsEveryVariable(t *testing.T) {
 		}
 	}
 	assert.Len(t, slices.Compact(slices.Sorted(slices.Values(names))), len(names), "a variable is declared twice: %v", names)
+}
+
+// TestMetricsPipelineCarriesNoIdentity is structural, on the rendered YAML
+// alone rather than the renderer's internals: in every golden, no processor
+// of the metrics pipeline is an identity processor or refers to an auth.
+// key. Behaviour proves the metrics arrive clean today; this guards the
+// pipeline's shape against a later edit (the AGENTS.md trust boundary).
+func TestMetricsPipelineCarriesNoIdentity(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("testdata", "*.yaml"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+	for _, file := range files {
+		t.Run(filepath.Base(file), func(t *testing.T) {
+			raw, err := os.ReadFile(file) // #nosec G304 -- the package's own goldens
+			require.NoError(t, err)
+			var cfg struct {
+				Processors map[string]any `yaml:"processors"`
+				Service    struct {
+					Pipelines map[string]struct {
+						Processors []string `yaml:"processors"`
+					} `yaml:"pipelines"`
+				} `yaml:"service"`
+			}
+			require.NoError(t, yaml.Unmarshal(raw, &cfg))
+			metrics, ok := cfg.Service.Pipelines["metrics"]
+			require.True(t, ok, "no metrics pipeline")
+			require.NotEmpty(t, metrics.Processors)
+			for _, name := range metrics.Processors {
+				assert.NotContains(t, name, "identity", "the metrics pipeline uses %s", name)
+				body, err := yaml.Marshal(cfg.Processors[name])
+				require.NoError(t, err)
+				assert.NotContains(t, string(body), "auth.", "processor %s of the metrics pipeline refers to the auth context:\n%s", name, body)
+			}
+			for _, signal := range []string{"traces", "logs"} {
+				assert.Contains(t, cfg.Service.Pipelines[signal].Processors, "attributes/identity", "%s lost its identity", signal)
+			}
+		})
+	}
 }

@@ -8,9 +8,9 @@ Every request is authenticated by oidcclientauth before it is dispatched.
 Traces and logs: otlpsingleport → memory_limiter → attributes/identity →
 resource/identity → batch → the signal's
 exporter: otlp_grpc or otlp_http, one per distinct upstream configuration
-(internal/upstream), so signals with the same upstream share one. Metrics have
-no pipeline yet, so their upstream is not resolved and the receiver answers
-404 / Unimplemented for them until the bounded metrics pipeline lands.
+(internal/upstream), so signals with the same upstream share one. Metrics:
+otlpsingleport → memory_limiter → filter/metrics → transform/metrics →
+resource/metrics → deltatocumulative → batch, with no identity action at all.
 */ -}}
 # Rendered by otlp-collector-oidc run from the environment.
 # The variables are documented in docs/configuration.md.
@@ -86,6 +86,36 @@ processors:
         value: {{ q .Value }}
 {{- end }}
 {{- end }}
+  # The client metrics chain (metrics.go): no identity action at all.
+  filter/metrics:
+    error_mode: ignore
+    metrics:
+      resource:
+        - {{ q (serviceNameFilter .Bounds.AllowedServiceNames) }}
+      metric:
+        - {{ q (metricNameFilter .Metrics.AllowedNames) }}
+  transform/metrics:
+    error_mode: ignore
+    metric_statements:
+      - {{ q metricResource }}
+      - {{ q (metricKeepKeys .Metrics.AllowedAttributeKeys .Identity.ClaimAttributes) }}
+{{- range metricStrip }}
+      - {{ q . }}
+{{- end }}
+{{- with .Identity.ClientResourceAttrs }}
+  # The deployment's static attributes, and nothing else, onto the reduced
+  # resource.
+  resource/metrics:
+    attributes:
+{{- range . }}
+      - key: {{ q .Key }}
+        value: {{ q .Value }}
+        action: upsert
+{{- end }}
+{{- end }}
+  deltatocumulative:
+    max_streams: {{ .Metrics.MaxStreams }}
+    max_stale: {{ q .Metrics.DeltaMaxStale }}
   batch:
     timeout: {{ q .Resources.BatchTimeout }}
 
@@ -182,3 +212,7 @@ service:
       receivers: [otlpsingleport]
       processors: [{{ join identityProcessors }}]
       exporters: [{{ .Upstream.ExporterFor "logs" }}]
+    metrics:
+      receivers: [otlpsingleport]
+      processors: [{{ join (metricProcessors .Identity.ClientResourceAttrs) }}]
+      exporters: [{{ .Upstream.ExporterFor "metrics" }}]

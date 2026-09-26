@@ -21,6 +21,7 @@ type Settings struct {
 	Upstream  UpstreamSettings `group:"Upstream"`
 	Listener  ListenerSettings `group:"Listener and TLS"`
 	Bounds    BoundsSettings   `group:"Payload bounds (spans and logs)"`
+	Metrics   MetricSettings   `group:"Client metrics (a separate pipeline, never carrying identity)"`
 	Resources ResourceSettings `group:"Resources and batching"`
 	Self      SelfSettings     `group:"Health and own metrics"`
 	Logs      LogSettings      `group:"Own logs"`
@@ -86,6 +87,26 @@ func (s BoundsSettings) Validate() error {
 	}
 	if s.MaxPastAge <= 0 {
 		errs = append(errs, fmt.Errorf("MAX_PAST_AGE (%s) must be positive", s.MaxPastAge))
+	}
+	return errors.Join(errs...)
+}
+
+// MetricSettings bounds the client metrics pipeline.
+type MetricSettings struct {
+	AllowedNames         MetricNamePattern `env:"ALLOWED_METRIC_NAMES"                            doc:"Regular expression the whole metric name must match; empty drops every client metric (each is counted)"`
+	AllowedAttributeKeys []string          `env:"ALLOWED_METRIC_ATTRIBUTE_KEYS"                   doc:"Comma-separated datapoint attribute keys kept; every other key is removed, and empty strips them all. 'user.*', 'session.*', 'enduser.*' and every 'CLAIM_ATTRIBUTES' target are removed even if listed"`
+	MaxStreams           int64             `env:"MAX_METRIC_STREAMS"     default:"2000"          doc:"Hard cap on the delta streams 'deltatocumulative' tracks; a datapoint of a new delta stream beyond it is dropped and counted, not stored. Cumulative and gauge series pass through untracked: the name and key allowlists are what bound them"`
+	DeltaMaxStale        time.Duration     `env:"DELTA_MAX_STALE"        default:"10m"           doc:"A stream not seen for this long is forgotten, freeing its place under the cap; the processor sweeps once a minute, so it goes within this plus a minute"`
+}
+
+// Validate refuses a cap or staleness that would admit nothing or forever.
+func (s MetricSettings) Validate() error {
+	var errs []error
+	if s.MaxStreams < 1 {
+		errs = append(errs, fmt.Errorf("MAX_METRIC_STREAMS (%d) must be at least 1", s.MaxStreams))
+	}
+	if s.DeltaMaxStale <= 0 {
+		errs = append(errs, fmt.Errorf("DELTA_MAX_STALE (%s) must be positive", s.DeltaMaxStale))
 	}
 	return errors.Join(errs...)
 }

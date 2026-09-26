@@ -69,6 +69,35 @@ processors:
       - key: "telemetry_source"
         action: upsert
         value: "client"
+  # The client metrics chain (metrics.go): no identity action at all.
+  filter/metrics:
+    error_mode: ignore
+    metrics:
+      resource:
+        - "not IsString(resource.attributes[\"service.name\"]) or not IsMatch(resource.attributes[\"service.name\"], \"^(?:app-.*|integration)$$\")"
+      metric:
+        - "true"
+  transform/metrics:
+    error_mode: ignore
+    metric_statements:
+      - "keep_keys(resource.attributes, [\"service.name\", \"service.version\"])"
+      - "keep_keys(datapoint.attributes, [])"
+      - "keep_keys(scope.attributes, [])"
+      - "keep_keys(metric.metadata, [])"
+      - "set(datapoint.exemplars, nil)"
+  # The deployment's static attributes, and nothing else, onto the reduced
+  # resource.
+  resource/metrics:
+    attributes:
+      - key: "deployment.environment.name"
+        value: "prod"
+        action: upsert
+      - key: "telemetry_source"
+        value: "client"
+        action: upsert
+  deltatocumulative:
+    max_streams: 2000
+    max_stale: "10m0s"
   batch:
     timeout: "5s"
 
@@ -132,4 +161,8 @@ service:
     logs:
       receivers: [otlpsingleport]
       processors: [memory_limiter, filter/bounds, transform/bounds, attributes/identity, resource/identity, batch]
+      exporters: [otlp_grpc]
+    metrics:
+      receivers: [otlpsingleport]
+      processors: [memory_limiter, filter/metrics, transform/metrics, resource/metrics, deltatocumulative, batch]
       exporters: [otlp_grpc]

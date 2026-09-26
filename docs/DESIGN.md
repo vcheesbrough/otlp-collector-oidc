@@ -45,7 +45,7 @@ any client ──► [ consumer's proxy, or TLS here ] ──► otlp-collector-
  bearer JWT                                          ├ oidcclientauth   the authenticator extension
                                                      ├ otlpsingleport   ONE TLS port: gRPC + HTTP /v1/{traces,logs,metrics}
                                                      ├ traces/logs:  memory_limiter · filter · transform · attributes(identity) · resource(identity) · batch
-                                                     ├ metrics:      memory_limiter · attributes(static only) · transform · filter · deltatocumulative · batch
+                                                     ├ metrics:      memory_limiter · filter · transform · resource(static only) · deltatocumulative · batch
                                                      ├ otlp exporter  (gRPC or HTTP, TLS or plaintext, queue + retry)
                                                      └ its own logs ──► the same logs upstream, as OTLP; own metrics on :8888
 ```
@@ -266,7 +266,14 @@ All stock components, rendered from an embedded template at startup (§6).
   is the recorded deviation: the drops are visible in the filter processor's own
   metrics on `:8888`, and the allowed set is published to client authors up front.
 - **Metrics — a separate, stricter chain.** No identity action at all, so `user.*` and
-  `session.id` cannot reach a datapoint by construction. `keep_keys` allowlists
+  `session.id` cannot reach a datapoint by construction. As built (`metrics.go`):
+  `memory_limiter → filter/metrics → transform/metrics → resource/metrics →
+  deltatocumulative → batch`; `filter` applies `ALLOWED_SERVICE_NAMES` to the resource
+  as the traces and logs chains do, and the metric-name allowlist; `transform` reduces
+  the resource to `service.name` / `service.version` and keeps the allowlisted
+  datapoint keys less any `user.*`, `session.*`, `enduser.*` key or claim target;
+  `resource/metrics` then upserts `CLIENT_RESOURCE_ATTRIBUTES`. A structural test on
+  the rendered goldens keeps identity out of the chain. `keep_keys` allowlists
   datapoint attribute keys (`ALLOWED_METRIC_ATTRIBUTE_KEYS`); `filter` allowlists
   metric names (`ALLOWED_METRIC_NAMES`); `deltatocumulative` has a hard `max_streams`
   so a client inventing series exhausts a counter, not the container; the resource is
@@ -550,6 +557,11 @@ suite, so a version bump re-proves them):
   space-delimited string and `preferred_username`, `email` and `name` from the
   `profile` / `email` scopes; the `hashed_user_id` `sub` is unchanged by a rename, a
   validity change and a signing-key change.
+- `deltatocumulative` converts delta sums, histograms and exponential histograms to
+  cumulative, and passes cumulative input through (`TestMetrics`). It sweeps stale
+  streams once a minute, so a stream is forgotten within `DELTA_MAX_STALE` plus a
+  minute; a datapoint of a stream beyond `max_streams` is dropped and counted as
+  `otelcol_deltatocumulative_datapoints{error="limit"}` (`TestMetricsStreamCap`).
 - OTTL time arithmetic works on the pinned version: `span.start_time < Now() -
   Duration("48h")` and `set(span.start_time, Now()) where span.start_time > Now() +
   Duration("5m")` (and the `log.time` forms) drop and clamp as written, proven end to
@@ -575,4 +587,3 @@ suite, so a version bump re-proves them):
 
 **Open:**
 
-- `deltatocumulative` covers histograms and exponential histograms, not only sums.
