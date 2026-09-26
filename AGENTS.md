@@ -32,7 +32,8 @@ Shared skills apply here once the machine is wired up (`start-iteration`,
 - `OWNER=vcheesbrough`, `REPO=otlp-collector-oidc`
 - CI reproduce commands: `make lint`, `make vet`, `make vuln`, `make test`,
   `make integration` (`go test ./integration`), `make generate-check`,
-  `make versions-check`, `make docs-check`, `make build`, and
+  `make versions-check`, `make docs-check`, `make alerts-check`,
+  `scripts/oci-labels-check.sh`, `make build`, and
   `make image && scripts/image-smoke.sh ghcr.io/vcheesbrough/otlp-collector-oidc:dev "$(scripts/version.sh)"`
 - Extra review criteria beyond the baseline five (correctness, security/OWASP, tests,
   versioning, scope): every change to `extension/` or `receiver/` is on the trust
@@ -200,7 +201,9 @@ rendered from the environment by `run`). One Go module.
 MVP reached with iteration 12 (`0.12.0`, then `1.0.0`, the maintainer's hand-cut
 tag): the observability sign-off, the standards pass, the image's licences and
 notices; DESIGN §10 has nothing open. Post-MVP iterations are `1.N.0`, N continuing
-from 13.
+from 13. Iteration 13 (`1.13.0`) completes the image's OCI labels (`created` from the
+commit time, `base.name`) and annotates the release's multi-arch index with them,
+which `scripts/oci-labels-check.sh` keeps equal to the Dockerfile's.
 
 History: iteration 1 (`0.1.0`) delivers the module, the single-port receiver, the shipped
 pipeline for traces and logs, the image, CI with its test report and badges, and the

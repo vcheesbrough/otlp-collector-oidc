@@ -5,6 +5,7 @@ GOTESTSUM     ?= $(GO) run gotest.tools/gotestsum@v1.13.0
 IMAGE         ?= ghcr.io/vcheesbrough/otlp-collector-oidc
 VERSION       ?= $(shell scripts/version.sh)
 REVISION      ?= $(shell git rev-parse HEAD)
+CREATED       ?= $(shell git log -1 --format=%cI HEAD)
 
 MODULE  := github.com/vcheesbrough/otlp-collector-oidc
 LDFLAGS := -s -w -X $(MODULE)/internal/build.version=$(VERSION)
@@ -43,7 +44,7 @@ build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/otlp-collector-oidc
 
 image:
-	docker build --build-arg VERSION=$(VERSION) --build-arg REVISION=$(REVISION) -t $(IMAGE):dev .
+	docker build --build-arg VERSION=$(VERSION) --build-arg REVISION=$(REVISION) --build-arg CREATED=$(CREATED) -t $(IMAGE):dev .
 
 ## generate: mdatagen for every component, ocb for the distribution's components.go.
 generate:

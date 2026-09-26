@@ -1,6 +1,7 @@
 #!/bin/sh
 # Smoke-tests a built image the way the README's quick start runs it: nothing
-# mounted, only the required variables set. Checks the OCI version label, the
+# mounted, only the required variables set. Checks the OCI labels (every
+# annotation the image declares; revision and created when given), the
 # version subcommand and target_info agree, that HEALTHCHECK passes with no
 # upstream and no reachable identity provider, that the configuration was
 # rendered into /tmp, and that an export without a token is refused as
@@ -13,14 +14,26 @@ set -eu
 
 image=$1
 version=$2
+# Optional: the commit the image was built from and its commit time.
+revision=${3:-}
+created=${4:-}
 
 fail() {
 	echo "smoke: $*" >&2
 	exit 1
 }
 
-label=$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image")
-[ "$label" = "$version" ] || fail "OCI version label is '$label', want '$version'"
+label() { docker inspect -f "{{ index .Config.Labels \"org.opencontainers.image.$1\" }}" "$image"; }
+[ "$(label version)" = "$version" ] || fail "OCI version label is '$(label version)', want '$version'"
+for key in title description source url documentation licenses revision created base.name; do
+	[ -n "$(label "$key")" ] || fail "OCI label org.opencontainers.image.$key is missing"
+done
+[ -z "$revision" ] || [ "$(label revision)" = "$revision" ] || fail "OCI revision label is '$(label revision)', want '$revision'"
+[ -z "$created" ] || [ "$(label created)" = "$created" ] || fail "OCI created label is '$(label created)', want '$created'"
+case "$(label created)" in
+[12][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]T*) ;;
+*) fail "OCI created label '$(label created)' is not an RFC 3339 time" ;;
+esac
 # The product's licence and the bundled modules' notices ship in the image.
 docker run --rm --entrypoint /bin/sh "$image" -c '
 	test -s /usr/share/licenses/otlp-collector-oidc/LICENSE &&
