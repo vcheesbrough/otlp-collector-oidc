@@ -491,7 +491,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 19
       },
@@ -541,8 +541,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 19
       },
       "targets": [
@@ -581,6 +581,65 @@
           "expr": "sum by (transport) (rate(otelcol_receiver_failed_log_records[$__rate_interval]) * on (job, instance) group_left() target_info{deployment_environment_name=~\"$env\", service_name=~\"$service\"})",
           "legendFormat": "failed log records {{transport}}",
           "refId": "D"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Dropped by the bounds",
+      "description": "Spans and log records the payload bounds dropped after the client's 200: a service.name outside ALLOWED_SERVICE_NAMES (or none), or older than MAX_PAST_AGE. A client build sending an unregistered service.name shows here; the client is never told.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 19
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum (rate(otelcol_processor_filter_spans_filtered[$__rate_interval]) * on (job, instance) group_left() target_info{deployment_environment_name=~\"$env\", service_name=~\"$service\"})",
+          "legendFormat": "spans",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum (rate(otelcol_processor_filter_logs_filtered[$__rate_interval]) * on (job, instance) group_left() target_info{deployment_environment_name=~\"$env\", service_name=~\"$service\"})",
+          "legendFormat": "log records",
+          "refId": "B"
         }
       ]
     },

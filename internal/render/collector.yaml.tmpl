@@ -38,6 +38,33 @@ processors:
     check_interval: 1s
     limit_mib: {{ .Resources.MemoryLimitMiB }}
     spike_limit_mib: {{ .Resources.MemorySpikeLimitMiB }}
+  # The payload bounds (bounds.go): a service.name outside
+  # ALLOWED_SERVICE_NAMES, or a timestamp older than MAX_PAST_AGE, drops the
+  # item after the client has had its 200; the filter's own counters on :8888
+  # show what was dropped.
+  filter/bounds:
+    error_mode: ignore
+    traces:
+      resource:
+        - {{ q (serviceNameFilter .Bounds.AllowedServiceNames) }}
+      span:
+        - {{ q (pastAgeSpanFilter .Bounds.MaxPastAge) }}
+    logs:
+      resource:
+        - {{ q (serviceNameFilter .Bounds.AllowedServiceNames) }}
+      log_record:
+        - {{ q (pastAgeLogFilter .Bounds.MaxPastAge) }}
+  # Timestamps further ahead than MAX_FUTURE_SKEW become now.
+  transform/bounds:
+    error_mode: ignore
+    trace_statements:
+{{- range spanClamps .Bounds.MaxFutureSkew }}
+      - {{ q . }}
+{{- end }}
+    log_statements:
+{{- range logClamps .Bounds.MaxFutureSkew }}
+      - {{ q . }}
+{{- end }}
   # Identity from the token, on every span and log record (identity.go).
   attributes/identity:
     actions:

@@ -44,7 +44,7 @@ and overrides it for one error only, not-ready → **503** (§3.3). Second,
 any client ──► [ consumer's proxy, or TLS here ] ──► otlp-collector-oidc ──► any OTLP endpoint
  bearer JWT                                          ├ oidcclientauth   the authenticator extension
                                                      ├ otlpsingleport   ONE TLS port: gRPC + HTTP /v1/{traces,logs,metrics}
-                                                     ├ traces/logs:  memory_limiter · attributes(identity) · resource(identity) · transform · filter · batch
+                                                     ├ traces/logs:  memory_limiter · filter · transform · attributes(identity) · resource(identity) · batch
                                                      ├ metrics:      memory_limiter · attributes(static only) · transform · filter · deltatocumulative · batch
                                                      ├ otlp exporter  (gRPC or HTTP, TLS or plaintext, queue + retry)
                                                      └ its own logs ──► the same logs upstream, as OTLP; own metrics on :8888
@@ -252,8 +252,10 @@ All stock components, rendered from an embedded template at startup (§6).
   processor with the literal values, not
   an auth-context copy lifted by `transform`, so no temporary copy ever exists; the
   authenticator's `resource_attributes` stays available to a mounted pipeline);
-  `transform` clamps far-future timestamps; `filter` drops
-  `service.name` outside `ALLOWED_SERVICE_NAMES` and far-past spans. The collector
+  and, first in the chain (as built, so a dropped item costs nothing further),
+  `filter/bounds` drops a resource whose `service.name` is outside
+  `ALLOWED_SERVICE_NAMES` or absent, and spans and records older than `MAX_PAST_AGE`,
+  while `transform/bounds` sets timestamps further ahead than `MAX_FUTURE_SKEW` to now. The collector
   stamps no fixed marker of its own: the client-origin attribute is one of the
   deployer's `resource_attributes` keys. No attribute count or length caps: the
   decompressed body cap and the edge rate limit bound cost, and span/log attributes
@@ -340,7 +342,7 @@ without it, naming the variable.
 | --- | --- | --- |
 | `ALLOWED_SERVICE_NAMES` | **required** | Regex; records whose resource `service.name` does not match are dropped and counted. `service.name` becomes a stream label downstream, so a client inventing names is a cardinality cost — a deployer who wants any name says so explicitly with `.*` |
 | `MAX_FUTURE_SKEW` | `5m` | Timestamps further ahead are clamped to now |
-| `MAX_PAST_AGE` | `48h` | Spans older than this are dropped (backend ingestion windows) |
+| `MAX_PAST_AGE` | `48h` | Spans and log records older than this are dropped and counted (backend ingestion windows); a record with no timestamp is kept |
 
 **Metrics (separate pipeline, never carries identity)**
 
@@ -548,6 +550,12 @@ suite, so a version bump re-proves them):
   space-delimited string and `preferred_username`, `email` and `name` from the
   `profile` / `email` scopes; the `hashed_user_id` `sub` is unchanged by a rename, a
   validity change and a signing-key change.
+- OTTL time arithmetic works on the pinned version: `span.start_time < Now() -
+  Duration("48h")` and `set(span.start_time, Now()) where span.start_time > Now() +
+  Duration("5m")` (and the `log.time` forms) drop and clamp as written, proven end to
+  end by `TestBounds`. `IsMatch` finds a match anywhere, so the renderer anchors
+  `ALLOWED_SERVICE_NAMES` (`^(?:…)$`), and guards it with `IsString` so a non-string
+  `service.name` is dropped rather than an evaluation error.
 - The `attributes` processor skips an upsert whose `from_context` key is absent
   (`coreinternal/attraction`, v0.161.0), so an optional claim needs no empty default;
   a delete before each upsert removes a client's forged value.
@@ -567,5 +575,4 @@ suite, so a version bump re-proves them):
 
 **Open:**
 
-- OTTL `Now() + Duration(...)` arithmetic in the pinned version.
 - `deltatocumulative` covers histograms and exponential histograms, not only sums.

@@ -55,6 +55,21 @@ client would and compare it with [the token profile](token-profile.md).
 (0.1/s for 15 minutes) is meant to sit above that; raise it if a known client is
 the cause.
 
+## Dropped by the bounds (dashboard panel, no alert)
+
+**Means:** spans and log records dropped after the client was answered `200`: a
+resource whose `service.name` does not match `ALLOWED_SERVICE_NAMES` (or has none), or
+a timestamp older than `MAX_PAST_AGE`. The client is never told, so the panel is the
+only place it shows.
+
+**Check first:** a new client build shipping an unregistered `service.name` is the
+usual cause: publish the allowed set to client authors, or widen
+`ALLOWED_SERVICE_NAMES`. A steady trickle of old records is a client flushing a
+backlog after being offline longer than `MAX_PAST_AGE`.
+
+**Why no alert:** the fix is the client author's, not the operator's; an alert would
+page someone who cannot act on it.
+
 ## OTLPCollectorOIDCExportDropped
 
 **Means:** telemetry is being lost on the way upstream, at the `exporter` label:

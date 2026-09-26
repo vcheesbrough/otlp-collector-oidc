@@ -59,6 +59,14 @@ Every `OTEL_EXPORTER_OTLP_*` variable above also has `OTEL_EXPORTER_OTLP_TRACES_
 | `MAX_REQUEST_BODY_BYTES` | `4194304` | Cap on the decompressed request, `413` beyond it; a gRPC message may be 5 bytes less (its frame header), `ResourceExhausted` beyond it |
 | `CORS_ALLOWED_ORIGINS` | *(empty)* | Comma-separated origins allowed to send from a browser on another origin; empty turns CORS off |
 
+## Payload bounds (spans and logs)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ALLOWED_SERVICE_NAMES` | **required** | Regular expression the whole `service.name` of a resource must match; a resource that does not, or has none, is dropped with its spans and records, and counted. `service.name` becomes a stream label downstream, so a client inventing names costs cardinality: `.*` admits any, explicitly |
+| `MAX_FUTURE_SKEW` | `5m` | A timestamp further ahead than this is set to the collector's now |
+| `MAX_PAST_AGE` | `48h` | A span started, or a log record timestamped, longer ago than this is dropped and counted (a backend's ingestion window) |
+
 ## Resources and batching
 
 | Variable | Default | Meaning |

@@ -37,6 +37,11 @@ func parseTemplate() (*template.Template, error) {
 			"identityActions":    identityActions,
 			"identityProcessors": identityProcessors,
 			"resourceActions":    resourceActions,
+			"serviceNameFilter":  serviceNameFilter,
+			"pastAgeSpanFilter":  pastAgeSpanFilter,
+			"pastAgeLogFilter":   pastAgeLogFilter,
+			"spanClamps":         futureSkewSpanClamps,
+			"logClamps":          futureSkewLogClamps,
 			"join":               func(items []string) string { return strings.Join(items, ", ") },
 		}).
 		Parse(templateText)

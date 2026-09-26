@@ -51,7 +51,8 @@ func resourceActions(claims, clientResource KeyValueList) []resourceAction {
 }
 
 // identityProcessors is the processor chain of every client traces and logs
-// pipeline, from one list so the two cannot diverge.
+// pipeline, from one list so the two cannot diverge: the bounds first, so
+// what is dropped costs nothing further, then identity, then batch.
 func identityProcessors() []string {
-	return []string{"memory_limiter", "attributes/identity", "resource/identity", "batch"}
+	return []string{"memory_limiter", "filter/bounds", "transform/bounds", "attributes/identity", "resource/identity", "batch"}
 }

@@ -13,6 +13,7 @@ services:
     environment:
       OIDC_ISSUER_URL: https://auth.example.com/application/o/telemetry-prod/
       OIDC_AUDIENCE: telemetry-prod
+      ALLOWED_SERVICE_NAMES: web-app|ios-app
       OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4317
       CLIENT_RESOURCE_ATTRIBUTES: deployment.environment.name=prod,telemetry_source=client
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=prod
