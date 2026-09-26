@@ -37,6 +37,12 @@ RUN apk add --no-cache openssl \
 FROM alpine:3.24
 ARG VERSION=0.0.0-dev+unknown
 ARG REVISION=unknown
+# The commit's own timestamp, not the build's, so rebuilding a commit gives
+# the same labels.
+ARG CREATED=1970-01-01T00:00:00Z
+# The OCI image annotations (image-spec annotations.md). The static ones are
+# repeated on the release's multi-arch index in release.yml, where GHCR reads
+# them; scripts/oci-labels-check.sh keeps the two lists equal.
 LABEL org.opencontainers.image.title="otlp-collector-oidc" \
       org.opencontainers.image.description="OpenTelemetry Collector distribution that authenticates OTLP clients with OIDC" \
       org.opencontainers.image.source="https://github.com/vcheesbrough/otlp-collector-oidc" \
@@ -44,7 +50,9 @@ LABEL org.opencontainers.image.title="otlp-collector-oidc" \
       org.opencontainers.image.documentation="https://github.com/vcheesbrough/otlp-collector-oidc/blob/main/README.md" \
       org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0" \
       org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.revision="${REVISION}"
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${CREATED}" \
+      org.opencontainers.image.base.name="docker.io/library/alpine:3.24"
 RUN addgroup -S -g 10001 otel && adduser -S -D -H -u 10001 -G otel otel \
  && install -d -m 0755 /etc/otlp-collector-oidc /etc/otlp-collector-oidc/tls
 COPY --from=build /out/otlp-collector-oidc /usr/local/bin/otlp-collector-oidc

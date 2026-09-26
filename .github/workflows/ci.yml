@@ -59,6 +59,9 @@ jobs:
       - name: Release planning (scripts/release-plan.sh)
         if: ${{ !cancelled() }}
         run: scripts/release-plan_test.sh
+      - name: OCI labels match the release annotations
+        if: ${{ !cancelled() }}
+        run: scripts/oci-labels-check.sh && scripts/oci-labels-check_test.sh
       - name: Alert rules (promtool check and unit tests)
         if: ${{ !cancelled() }}
         run: make alerts-check
@@ -161,7 +164,9 @@ jobs:
           fetch-depth: 0
       - name: Version
         id: version
-        run: echo "version=$(scripts/version.sh)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(scripts/version.sh)" >> "$GITHUB_OUTPUT"
+          echo "created=$(git log -1 --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
@@ -171,10 +176,11 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
             REVISION=${{ github.sha }}
+            CREATED=${{ steps.version.outputs.created }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke test
-        run: scripts/image-smoke.sh otlp-collector-oidc:ci "${{ steps.version.outputs.version }}"
+        run: scripts/image-smoke.sh otlp-collector-oidc:ci "${{ steps.version.outputs.version }}" "${{ github.sha }}" "${{ steps.version.outputs.created }}"
 
   badges:
     name: Badges

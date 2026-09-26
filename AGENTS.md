@@ -32,8 +32,9 @@ Shared skills apply here once the machine is wired up (`start-iteration`,
 - `OWNER=vcheesbrough`, `REPO=otlp-collector-oidc`
 - CI reproduce commands: `make lint`, `make vet`, `make vuln`, `make test`,
   `make integration` (`go test ./integration`), `make generate-check`,
-  `make versions-check`, `make docs-check`, `make build`, and
-  `make image && scripts/image-smoke.sh ghcr.io/vcheesbrough/otlp-collector-oidc:dev "$(scripts/version.sh)"`
+  `make versions-check`, `make docs-check`, `make alerts-check`,
+  `scripts/oci-labels-check.sh` (and `scripts/oci-labels-check_test.sh`), `make build`, and
+  `make image && scripts/image-smoke.sh ghcr.io/vcheesbrough/otlp-collector-oidc:dev "$(scripts/version.sh)" "$(git rev-parse HEAD)" "$(git log -1 --format=%cI HEAD)"`
 - Extra review criteria beyond the baseline five (correctness, security/OWASP, tests,
   versioning, scope): every change to `extension/` or `receiver/` is on the trust
   boundary — the reviewer checks that no client-supplied value can reach a metric
@@ -197,10 +198,13 @@ rendered from the environment by `run`). One Go module.
 
 ## Status
 
-MVP reached with iteration 12 (`0.12.0`, then `1.0.0`, the maintainer's hand-cut
-tag): the observability sign-off, the standards pass, the image's licences and
-notices; DESIGN §10 has nothing open. Post-MVP iterations are `1.N.0`, N continuing
-from 13.
+Pre-MVP (`0.x`). Iteration 12 (`0.12.0`) did the MVP sign-off work — the
+observability sign-off, the standards pass, the image's licences and notices;
+DESIGN §10 has nothing open — but the maintainer chose not to cut `1.0.0` then: it
+remains a later, deliberate step (push `v1.0.0` on a released commit, see
+"Versioning"). Iteration 13 (`0.13.0`) completes the image's OCI labels (`created` from the
+commit time, `base.name`) and annotates the release's multi-arch index with them,
+which `scripts/oci-labels-check.sh` keeps equal to the Dockerfile's.
 
 History: iteration 1 (`0.1.0`) delivers the module, the single-port receiver, the shipped
 pipeline for traces and logs, the image, CI with its test report and badges, and the
@@ -240,7 +244,7 @@ own — the request path is the stock receiver and processors, whose spans would
 describe the collector's internals rather than anything an operator acts on. Its logs
 are the one self-signal it pushes, as OTLP, to the logs upstream.
 
-**Further deviations recorded at the `1.0.0` sign-off (card #435):**
+**Further deviations recorded at the MVP sign-off (card #435, iteration 12):**
 `OTEL_EXPORTER_OTLP_ENDPOINT` is required, not optional telemetry, because forwarding
 is the product's function (§1.8's "absent is off" does not apply to it; `LOG_OUTPUT`
 turns the own-logs export off instead); what `filter` drops after the client's `200` is

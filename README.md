@@ -32,7 +32,7 @@ docker run --rm -p 4318:4318 \
   -e OIDC_AUDIENCE=your-client-id \
   -e ALLOWED_SERVICE_NAMES='web-app|ios-app' \
   -e OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4317 \
-  ghcr.io/vcheesbrough/otlp-collector-oidc:latest
+  ghcr.io/vcheesbrough/otlp-collector-oidc:edge
 ```
 
 ```sh
@@ -65,7 +65,7 @@ docker run --rm -p 4318:4318 \
   -e OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf \
   -e OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://loki:3100/otlp/v1/logs \
   -e OTEL_EXPORTER_OTLP_LOGS_HEADERS=X-Scope-OrgID=tenant-1 \
-  ghcr.io/vcheesbrough/otlp-collector-oidc:latest
+  ghcr.io/vcheesbrough/otlp-collector-oidc:edge
 ```
 
 ## Configuration
@@ -183,10 +183,10 @@ unit and integration tiers, and the `test-reports` artifact holds the JUnit file
 
 ## Status
 
-Stable from `1.0.0`: the configuration variables, the token profile and the metric
-names on `:8888` change only with a major version. The image is
-`ghcr.io/vcheesbrough/otlp-collector-oidc`, tagged by version and `:latest`; `:edge`
-follows `main`.
+Pre-release (`0.x`): every piece of the design is built, but until `1.0.0` the
+configuration variables, the token profile and the metric names on `:8888` may still
+change between minor versions. The image is `ghcr.io/vcheesbrough/otlp-collector-oidc`,
+tagged by version; `:edge` follows `main`, and `:latest` arrives with `1.0.0`.
 
 - [Configuration reference](docs/configuration.md) — every variable, generated from
   the code.
