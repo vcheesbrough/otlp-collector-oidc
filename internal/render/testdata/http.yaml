@@ -21,33 +21,34 @@ processors:
     timeout: "5s"
 
 exporters:
-  otlp_grpc:
-    endpoint: "collector:4317"
+  otlp_http:
+    endpoint: "https://otlp.example.com/otlp/"
     tls:
-      insecure: true
+      insecure: false
+      insecure_skip_verify: false
     headers:
-      - name: "x-a"
-        value: "\"$${env:HOME} # exporters: {}"
+      - name: "X-Scope-OrgID"
+        value: "tenant-1"
     timeout: "10s"
     compression: "gzip"
     sending_queue:
       queue_size: 1000
     retry_on_failure:
       enabled: true
-      initial_interval: "5s"
-      max_elapsed_time: "1m0s"
-      max_interval: "30s"
+      initial_interval: "2s"
+      max_elapsed_time: "2s"
+      max_interval: "2s"
 
 extensions:
   health_check:
     endpoint: "127.0.0.1:13133"
   oidcclientauth:
-    issuer_url: "https://idp.example.com/?a=$${env:HOME}"
-    audience: "a\"b\nexporters: {}"
+    issuer_url: "https://idp.example.com/"
+    audience: "telemetry"
     discovery_retry: "30s"
     jwks_refresh: "10m0s"
-    required_scope: "$$$${x}$$"
-    required_claims: ["sub", "'quoted'", "#hash"]
+    required_scope: "telemetry:write"
+    required_claims: ["sub", "preferred_username"]
     clock_skew: "1m0s"
     rejection_log_interval: "1m0s"
 
@@ -70,8 +71,8 @@ service:
     traces:
       receivers: [otlpsingleport]
       processors: [memory_limiter, batch]
-      exporters: [otlp_grpc]
+      exporters: [otlp_http]
     logs:
       receivers: [otlpsingleport]
       processors: [memory_limiter, batch]
-      exporters: [otlp_grpc]
+      exporters: [otlp_http]

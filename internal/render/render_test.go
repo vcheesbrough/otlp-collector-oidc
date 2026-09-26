@@ -56,6 +56,39 @@ var shapes = map[string]map[string]string{
 		"LOG_LEVEL":                   "debug",
 		"LOG_FORMAT":                  "console",
 	},
+	// One HTTP upstream for every signal: one exporter, the base endpoint
+	// with the signal paths still to append.
+	"http": {
+		"OIDC_ISSUER_URL":             "https://idp.example.com/",
+		"OIDC_AUDIENCE":               "telemetry",
+		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "https://otlp.example.com/otlp/",
+		"OTEL_EXPORTER_OTLP_HEADERS":  "X-Scope-OrgID=tenant-1",
+		// Shorter than the collector's first backoff, which is shortened to it.
+		"UPSTREAM_RETRY_MAX_ELAPSED": "2s",
+	},
+	// Traces to a TLS gRPC upstream with mTLS and every base variable set;
+	// logs to an HTTP endpoint used verbatim, their headers replacing the
+	// base ones; metrics to a third upstream that no pipeline uses yet, so
+	// it is not resolved and nothing is rendered for it.
+	"per-signal": {
+		"OIDC_ISSUER_URL":                       "https://idp.example.com/",
+		"OIDC_AUDIENCE":                         "telemetry",
+		"OTEL_EXPORTER_OTLP_ENDPOINT":           "https://tempo.example.com:4317",
+		"OTEL_EXPORTER_OTLP_HEADERS":            "authorization=Bearer%20abc,x-tenant=a",
+		"OTEL_EXPORTER_OTLP_TIMEOUT":            "2500",
+		"OTEL_EXPORTER_OTLP_COMPRESSION":        "none",
+		"OTEL_EXPORTER_OTLP_CERTIFICATE":        "/run/upstream/ca.pem",
+		"OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE": "/run/upstream/client.pem",
+		"OTEL_EXPORTER_OTLP_CLIENT_KEY":         "/run/upstream/client-key.pem",
+		"UPSTREAM_TLS_INSECURE_SKIP_VERIFY":     "true",
+		"UPSTREAM_QUEUE_SIZE":                   "50",
+		"UPSTREAM_RETRY_MAX_ELAPSED":            "5m",
+		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL":      "http/protobuf",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT":      "http://loki.example.com:3100/otlp/v1/logs",
+		"OTEL_EXPORTER_OTLP_LOGS_HEADERS":       "x-scope-orgid=b",
+		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT":   "http://mimir.example.com:4317",
+	},
 	// Values that would break naive substitution: quotes, a newline, YAML
 	// syntax and ${...} references must arrive as literal strings.
 	"hostile": {
@@ -64,6 +97,7 @@ var shapes = map[string]map[string]string{
 		"REQUIRED_SCOPE":              "$${x}$",
 		"REQUIRED_CLAIMS":             "sub,'quoted',#hash",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317",
+		"OTEL_EXPORTER_OTLP_HEADERS":  "x-a=%22%24%7Benv%3AHOME%7D%20%23%20exporters%3A%20%7B%7D",
 	},
 }
 
@@ -107,13 +141,25 @@ func TestTemplateUsesEverySetting(t *testing.T) {
 	})
 
 	var declared []string
+	resolvedGroups := map[string]bool{}
 	for _, g := range groupsOf(reflect.ValueOf(&Settings{}).Elem()) {
+		if g.resolver != nil {
+			// Its variables are the resolver's to prove; the template must
+			// still render the group.
+			resolvedGroups[g.name] = true
+			assert.True(t, slices.ContainsFunc(used, func(p string) bool { return strings.HasPrefix(p, g.name+".") }),
+				"the template never renders .%s", g.name)
+			continue
+		}
 		for _, v := range g.variables {
 			declared = append(declared, v.path)
 			assert.Contains(t, used, v.path, "%s is declared but the template never renders it", v.name)
 		}
 	}
 	for _, path := range used {
+		if group, _, _ := strings.Cut(path, "."); resolvedGroups[group] {
+			continue
+		}
 		assert.Contains(t, declared, path, "the template renders .%s, which is not a variable", path)
 	}
 }
@@ -133,9 +179,9 @@ func walk(node parse.Node, fn func(ident []string)) {
 	case *parse.IfNode:
 		walkBranch(&n.BranchNode, fn)
 	case *parse.WithNode:
-		walkBranch(&n.BranchNode, fn)
+		walkRebound(&n.BranchNode, fn)
 	case *parse.RangeNode:
-		walkBranch(&n.BranchNode, fn)
+		walkRebound(&n.BranchNode, fn)
 	case *parse.PipeNode:
 		if n == nil {
 			return
@@ -152,6 +198,14 @@ func walk(node parse.Node, fn func(ident []string)) {
 	case *parse.ChainNode:
 		walk(n.Node, fn)
 	}
+}
+
+// walkRebound walks a with or range, whose body sees the pipeline's value as
+// dot: fields there are the value's, not Settings', so only the pipeline and
+// the else branch are walked.
+func walkRebound(n *parse.BranchNode, fn func(ident []string)) {
+	walk(n.Pipe, fn)
+	walk(n.ElseList, fn)
 }
 
 func walkBranch(n *parse.BranchNode, fn func(ident []string)) {

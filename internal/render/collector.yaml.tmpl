@@ -5,9 +5,11 @@ docs/configuration.md. Strings pass through `q`, which quotes them and escapes
 "$", so no value can inject YAML or a ${...} reference.
 
 Every request is authenticated by oidcclientauth before it is dispatched.
-Traces and logs: otlpsingleport → memory_limiter → batch → otlp_grpc.
-Metrics have no pipeline yet, so the receiver answers 404 / Unimplemented for
-them until the bounded metrics pipeline lands.
+Traces and logs: otlpsingleport → memory_limiter → batch → the signal's
+exporter: otlp_grpc or otlp_http, one per distinct upstream configuration
+(internal/upstream), so signals with the same upstream share one. Metrics have
+no pipeline yet, so their upstream is not resolved and the receiver answers
+404 / Unimplemented for them until the bounded metrics pipeline lands.
 */ -}}
 # Rendered by otlp-collector-oidc run from the environment.
 # The variables are documented in docs/configuration.md.
@@ -39,10 +41,42 @@ processors:
     timeout: {{ q .Resources.BatchTimeout }}
 
 exporters:
-  otlp_grpc:
-    endpoint: {{ q .Upstream.Endpoint.HostPort }}
+{{- range .Upstream.Exporters }}
+  {{ .ID }}:
+{{- range .Endpoints }}
+    {{ .Key }}: {{ q .Value }}
+{{- end }}
     tls:
-      insecure: {{ .Upstream.Endpoint.Insecure }}
+      insecure: {{ .Config.Plaintext }}
+{{- if not .Config.Plaintext }}
+      insecure_skip_verify: {{ .Config.SkipVerify }}
+{{- with .Config.CAFile }}
+      ca_file: {{ q . }}
+{{- end }}
+{{- with .Config.ClientCertFile }}
+      cert_file: {{ q . }}
+{{- end }}
+{{- with .Config.ClientKeyFile }}
+      key_file: {{ q . }}
+{{- end }}
+{{- end }}
+{{- with .Headers }}
+    headers:
+{{- range . }}
+      - name: {{ q .Name }}
+        value: {{ q .Value }}
+{{- end }}
+{{- end }}
+    timeout: {{ q .Config.Timeout }}
+    compression: {{ q .Config.Compression }}
+    sending_queue:
+      queue_size: {{ .Config.QueueSize }}
+    retry_on_failure:
+      enabled: true
+      initial_interval: {{ q .Config.RetryInitialInterval }}
+      max_elapsed_time: {{ q .Config.RetryMaxElapsed }}
+      max_interval: {{ q .Config.RetryMaxInterval }}
+{{- end }}
 
 extensions:
   health_check:
@@ -76,8 +110,8 @@ service:
     traces:
       receivers: [otlpsingleport]
       processors: [memory_limiter, batch]
-      exporters: [otlp_grpc]
+      exporters: [{{ .Upstream.ExporterFor "traces" }}]
     logs:
       receivers: [otlpsingleport]
       processors: [memory_limiter, batch]
-      exporters: [otlp_grpc]
+      exporters: [{{ .Upstream.ExporterFor "logs" }}]

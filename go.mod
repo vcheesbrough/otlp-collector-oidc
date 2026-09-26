@@ -28,6 +28,7 @@ require (
 	go.opentelemetry.io/collector/consumer/consumertest v0.161.0
 	go.opentelemetry.io/collector/exporter v1.67.0
 	go.opentelemetry.io/collector/exporter/otlpexporter v0.161.0
+	go.opentelemetry.io/collector/exporter/otlphttpexporter v0.161.0
 	go.opentelemetry.io/collector/extension v1.67.0
 	go.opentelemetry.io/collector/extension/extensionauth v1.67.0
 	go.opentelemetry.io/collector/extension/extensiontest v0.161.0

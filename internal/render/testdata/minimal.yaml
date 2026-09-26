@@ -25,6 +25,15 @@ exporters:
     endpoint: "collector:4317"
     tls:
       insecure: true
+    timeout: "10s"
+    compression: "gzip"
+    sending_queue:
+      queue_size: 1000
+    retry_on_failure:
+      enabled: true
+      initial_interval: "5s"
+      max_elapsed_time: "1m0s"
+      max_interval: "30s"
 
 extensions:
   health_check:

@@ -169,6 +169,11 @@ func defaultLogs(env shipped) func(*testing.T) {
 		assert.Equal(t, harness.Audience, startup["OIDC_AUDIENCE"])
 		assert.Equal(t, "50ms", startup["BATCH_TIMEOUT"])
 		assert.Equal(t, "sub,preferred_username", startup["REQUIRED_CLAIMS"], "defaults are logged too")
+		upstream := "grpc " + strings.TrimPrefix(env.sink.Endpoint(), "http://") + " plaintext"
+		for _, signal := range []string{"traces", "logs"} {
+			assert.Equal(t, upstream, startup["upstream."+signal], "each signal's resolved upstream")
+		}
+		assert.NotContains(t, startup, "upstream.metrics", "metrics has no pipeline, so no upstream")
 		assert.NotContains(t, out, "Rendered configuration", "the YAML is logged at debug only")
 	}
 }

@@ -253,8 +253,11 @@ All stock components, rendered from an embedded template at startup (§6).
   visible.
 - `memory_limiter` first in every pipeline; identity is materialised from context
   **before** `batch`, so no `metadata_keys` on the batcher; the OTLP gRPC exporter
-  (`otlp_grpc`; `otlp` is its deprecated alias from collector v0.161) with
-  `sending_queue` and `retry_on_failure`.
+  (`otlp_grpc`; `otlp` is its deprecated alias from collector v0.161) or the OTLP/HTTP
+  one (`otlp_http`), one per distinct upstream configuration (§6.2), each with
+  `sending_queue` and `retry_on_failure`. An exporter serving every signal is plain
+  `otlp_grpc`/`otlp_http`; otherwise its name lists the signals it serves
+  (`otlp_http/logs`), so ids stay stable as pipelines are added.
 - `health_check` on `:13133`; own metrics on `:8888`.
 
 ## 6. Configuration
@@ -340,26 +343,32 @@ without it, naming the variable.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | **required** | URL. `http://host:4317` → plaintext, `https://…` → TLS (rendered to `endpoint` + `tls.insecure`) |
-| `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | `grpc` or `http/protobuf` — selects the exporter component |
-| `OTEL_EXPORTER_OTLP_HEADERS` | *(empty)* | `key=value,key2=value2` → `headers:` map — tenant ids, a hosted backend's token |
-| `OTEL_EXPORTER_OTLP_TIMEOUT` | `10000` | Milliseconds, per the SDK spec |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | **required** | URL. `http://` → plaintext, `https://` → TLS. For `grpc`, `scheme://host:port` only (rendered to `endpoint` + `tls.insecure`); for `http/protobuf`, a URL with an optional path. Not required when every signal with a pipeline has its own |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | `grpc` → `otlp_grpc`, `http/protobuf` → `otlp_http`. The SDK's `http/json` is not offered |
+| `OTEL_EXPORTER_OTLP_HEADERS` | *(empty)* | `key=value,key2=value2`, percent-decoded → `headers:` — tenant ids, a hosted backend's token. A later duplicate name wins. Values are never logged or printed in an error, and the debug dump of the rendered configuration redacts them |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` | `10000` | Milliseconds, per the SDK spec, 1 to 3600000 |
 | `OTEL_EXPORTER_OTLP_COMPRESSION` | `gzip` | `gzip` or `none` |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` | *(system roots)* | CA file → `tls.ca_file` |
-| `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` / `_CLIENT_KEY` | *(empty)* | mTLS to upstream |
-| `OTEL_EXPORTER_OTLP_INSECURE` | `false` | Plaintext regardless of scheme |
+| `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` / `_CLIENT_KEY` | *(empty)* | mTLS to upstream; set together |
+| `OTEL_EXPORTER_OTLP_INSECURE` | `false` | Plaintext gRPC regardless of scheme (a deviation: the SDK applies it only to a scheme-less endpoint, which is not accepted here). It does not apply to `http/protobuf`, where the scheme alone decides: an inherited base value is ignored there; the signal's own `true` with an `https://` URL, or a base `true` with no gRPC signal, is refused |
 | `UPSTREAM_TLS_INSECURE_SKIP_VERIFY` | `false` | *(no SDK equivalent)* accept an unverifiable upstream certificate |
-| `UPSTREAM_QUEUE_SIZE` | `1000` | *(no SDK equivalent)* batches held while upstream is unreachable; beyond it, drop and count |
-| `UPSTREAM_RETRY_MAX_ELAPSED` | `60s` | *(no SDK equivalent)* |
+| `UPSTREAM_QUEUE_SIZE` | `1000` | *(no SDK equivalent)* export requests held per exporter and pipeline while upstream is unreachable; beyond it, drop and count |
+| `UPSTREAM_RETRY_MAX_ELAPSED` | `60s` | *(no SDK equivalent)* how long an export is retried before it is dropped and counted; `0s` = no limit. The retry backoff is capped at 30s, or at this when shorter |
 
-**Per-signal overrides, exactly as the SDK spec defines them.** Each of the above has
-`OTEL_EXPORTER_OTLP_TRACES_*`, `OTEL_EXPORTER_OTLP_LOGS_*` and
-`OTEL_EXPORTER_OTLP_METRICS_*` forms that take precedence for that signal. The
-renderer emits one exporter per distinct signal configuration and wires each pipeline
-to its own; with no per-signal variable set, all three share one. Per the spec, a
-per-signal HTTP endpoint is used verbatim (no `/v1/<signal>` appended), while the base
-endpoint gets the signal path appended. Traces can therefore go to Tempo directly and
-logs to Loki's OTLP endpoint with no collector between.
+**Per-signal overrides, exactly as the SDK spec defines them.** Each
+`OTEL_EXPORTER_OTLP_*` variable above has `OTEL_EXPORTER_OTLP_TRACES_*`,
+`OTEL_EXPORTER_OTLP_LOGS_*` and `OTEL_EXPORTER_OTLP_METRICS_*` forms that take
+precedence for that signal, each variable on its own (a per-signal `_HEADERS` replaces
+the base headers rather than merging). The `UPSTREAM_*` variables have no per-signal
+form and apply to every exporter. The resolver (`internal/upstream`) resolves only the
+signals that have a pipeline, so a signal without one cannot refuse startup or rename
+an exporter; the renderer emits one exporter per distinct configuration and wires
+each pipeline to its own; with no per-signal variable set, all share one. Per the spec, a per-signal HTTP endpoint is used verbatim (rendered
+as `<signal>_endpoint`), while the base endpoint gets `/v1/<signal>` appended. Traces
+can therefore go to Tempo directly and logs to Loki's OTLP endpoint with no collector
+between. A CA or client certificate inherited from the base variables is ignored by a
+plaintext signal; set per signal for a plaintext signal, or set on the base when every
+signal is plaintext, it is refused as applying to nothing.
 
 **Self-observability and escape hatch**
 

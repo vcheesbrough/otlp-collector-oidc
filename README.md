@@ -50,6 +50,21 @@ what is accepted. Without one the answer is `401` and names what is wrong —
 certificate. OTLP/gRPC clients use the same port and get the same answers as
 `Unauthenticated` and `Unavailable`.
 
+The upstream is set with the standard `OTEL_EXPORTER_OTLP_*` variables, per signal as
+the SDK specification defines them, so each signal can go straight to its backend —
+here traces to Tempo over gRPC and logs to Loki's OTLP endpoint over HTTP:
+
+```sh
+docker run --rm -p 4318:4318 \
+  -e OIDC_ISSUER_URL=https://idp.example.com/application/o/telemetry/ \
+  -e OIDC_AUDIENCE=your-client-id \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317 \
+  -e OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf \
+  -e OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://loki:3100/otlp/v1/logs \
+  -e OTEL_EXPORTER_OTLP_LOGS_HEADERS=X-Scope-OrgID=tenant-1 \
+  ghcr.io/vcheesbrough/otlp-collector-oidc:edge
+```
+
 ## Configuration
 
 Every setting is an environment variable; the
@@ -57,7 +72,13 @@ Every setting is an environment variable; the
 are required: `OIDC_ISSUER_URL`, `OIDC_AUDIENCE` and `OTEL_EXPORTER_OTLP_ENDPOINT`
 (`http://` for a plaintext upstream, `https://` for TLS). A missing required variable
 or a value that does not parse stops the process before it listens, and the error
-names the variable and the value.
+names the variable and the value — except a header's, which is never printed.
+
+The upstream follows the SDK's semantics, with one deviation recorded in the
+[design](docs/DESIGN.md#62-reference): `grpc` or `http/protobuf`, headers, timeout
+in milliseconds, compression, a CA and a client certificate for mTLS, each with
+`_TRACES_`, `_LOGS_` and `_METRICS_` forms that take precedence for that signal.
+Signals that resolve to the same upstream share one exporter.
 
 The image runs `otlp-collector-oidc run`, which renders the pipeline from the
 environment into `/tmp/otlp-collector-oidc.yaml` and starts on it; `LOG_LEVEL=debug`
@@ -80,7 +101,7 @@ and is public: it encrypts the hop from a proxy, it identifies nothing. The non-
 runtime user (uid 10001) must be able to read a mounted pair; it is re-read every
 `TLS_RELOAD_INTERVAL`, so a rotated certificate needs no restart. An upstream or
 provider signed by a private CA is trusted by mounting the CA and setting
-`SSL_CERT_FILE`. With a read-only root filesystem, mount a writable `/tmp`.
+`SSL_CERT_FILE`, or, for the upstream alone, `OTEL_EXPORTER_OTLP_CERTIFICATE`. With a read-only root filesystem, mount a writable `/tmp`.
 
 ## Observability
 
@@ -96,10 +117,14 @@ provider signed by a private CA is trusted by mounting the CA and setting
   `decode`, `unknown_path`, `decompress`);
   `otelcol_oidcclientauth_rejections` for requests the authenticator refused, by
   `reason` (`no_token`, `invalid_token`, `missing_scope`, `missing_claim`,
-  `not_ready`); and `otelcol_exporter_send_failed_*` and `otelcol_exporter_queue_size`
-  for upstream health.
+  `not_ready`); and, for upstream health, per exporter, `otelcol_exporter_send_failed_*`
+  for exports given up after `UPSTREAM_RETRY_MAX_ELAPSED`,
+  `otelcol_exporter_enqueue_failed_*` for exports dropped with the queue full, and
+  `otelcol_exporter_queue_size` against `otelcol_exporter_queue_capacity`
+  (`UPSTREAM_QUEUE_SIZE`).
 - **Logs:** stdout, JSON unless `LOG_FORMAT=console`. The first line records whether
-  the configuration was rendered or mounted, and the value every variable took. A
+  the configuration was rendered or mounted, the value every variable took and each
+  signal's resolved upstream, headers named but never valued. A
   refusal logs one warning per reason per `REJECTION_LOG_INTERVAL`, with `reason` as
   a field and the count it suppressed; never the token.
 
@@ -127,10 +152,10 @@ unit and integration tiers, and the `test-reports` artifact holds the JUnit file
 
 Pre-release (`0.x`): single-port OTLP/gRPC and OTLP/HTTP over TLS, every request
 authenticated with an OIDC access token, configured entirely by environment, forwarding
-traces and logs to an OTLP/gRPC upstream over plaintext or TLS. The identity is
-validated but not yet stamped onto the telemetry; identity stamping, the metrics
-pipeline, the rest of the `OTEL_EXPORTER_OTLP_*` family (HTTP, headers, per-signal
-endpoints) and its own logs upstream follow —
+traces and logs to OTLP/gRPC or OTLP/HTTP upstreams, per signal, set by the standard
+`OTEL_EXPORTER_OTLP_*` variables. The identity is validated but not yet stamped onto
+the telemetry; identity stamping, the metrics pipeline and its own logs upstream
+follow —
 [board](https://bored.desync.link/boards/otlp-collector-oidc).
 
 ## Licence

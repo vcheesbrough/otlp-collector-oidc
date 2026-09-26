@@ -198,5 +198,7 @@ pipeline for traces and logs, the image, CI with its test report and badges, and
 integration harness. Iteration 2 (`0.2.0`) authenticates every request with an OIDC
 access token (`extension/oidcclientauth`, `docs/token-profile.md`) and adds a fake
 issuer to the harness. Iteration 3 (`0.3.0`) renders the configuration from the
-environment (`internal/render`, `run`, `docs/configuration.md`); the upstream
-`OTEL_EXPORTER_OTLP_*` family is the next card.
+environment (`internal/render`, `run`, `docs/configuration.md`). Iteration 4 (`0.4.0`)
+resolves the upstream from the standard `OTEL_EXPORTER_OTLP_*` variables per signal
+(`internal/upstream`), gRPC or HTTP, with headers, mTLS, queue and retry; the
+collector's own logs upstream are the next card.
