@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
@@ -47,9 +49,11 @@ type Received struct {
 	Metrics []pmetric.Metrics
 }
 
-// Sink is a fake OTLP/gRPC upstream on loopback plaintext.
+// Sink is a fake OTLP/gRPC upstream on loopback, plaintext unless made with
+// NewTLSSink.
 type Sink struct {
 	addr string
+	tls  *tls.Config // nil: plaintext
 
 	mu        sync.Mutex // guards everything below
 	behaviour Behaviour
@@ -61,7 +65,21 @@ type Sink struct {
 // ends.
 func NewSink(t *testing.T) *Sink {
 	t.Helper()
-	s := &Sink{addr: freeAddr(t)}
+	return newSink(t, nil)
+}
+
+// NewTLSSink is a sink that serves TLS with cert: the collector verifies it
+// only when it trusts cert, as through SSL_CERT_FILE.
+func NewTLSSink(t *testing.T, cert Certificate) *Sink {
+	t.Helper()
+	pair, err := tls.LoadX509KeyPair(cert.CertFile, cert.KeyFile)
+	require.NoError(t, err)
+	return newSink(t, &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12})
+}
+
+func newSink(t *testing.T, tlsConfig *tls.Config) *Sink {
+	t.Helper()
+	s := &Sink{addr: freeAddr(t), tls: tlsConfig}
 	require.NoError(t, s.serve(t.Context()))
 	t.Cleanup(func() {
 		s.mu.Lock()
@@ -75,6 +93,9 @@ func NewSink(t *testing.T) *Sink {
 
 // Endpoint is the URL to set as OTEL_EXPORTER_OTLP_ENDPOINT.
 func (s *Sink) Endpoint() string {
+	if s.tls != nil {
+		return "https://" + s.addr
+	}
 	return "http://" + s.addr
 }
 
@@ -116,7 +137,11 @@ func (s *Sink) serve(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("sink listen: %w", err)
 	}
-	server := grpc.NewServer()
+	var opts []grpc.ServerOption
+	if s.tls != nil {
+		opts = append(opts, grpc.Creds(credentials.NewTLS(s.tls)))
+	}
+	server := grpc.NewServer(opts...)
 	ptraceotlp.RegisterGRPCServer(server, &sinkTraces{sink: s})
 	plogotlp.RegisterGRPCServer(server, &sinkLogs{sink: s})
 	pmetricotlp.RegisterGRPCServer(server, &sinkMetrics{sink: s})

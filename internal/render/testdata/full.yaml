@@ -1,0 +1,70 @@
+# Rendered by otlp-collector-oidc run from the environment.
+# The variables are documented in docs/configuration.md.
+
+receivers:
+  otlpsingleport:
+    endpoint: "127.0.0.1:14318"
+    max_request_body_size: 1048576
+    tls:
+      cert_file: "/run/tls/tls.crt"
+      key_file: "/run/tls/tls.key"
+      reload_interval: "10s"
+    cors:
+      allowed_origins: ["https://app.example.com", "https://*.example.org"]
+      # What an OTLP/HTTP export from a browser sends. rs/cors allows
+      # Content-Type implicitly only when this list is empty, so it is listed.
+      allowed_headers: ["Authorization", "Content-Type", "Content-Encoding"]
+    auth:
+      authenticator: oidcclientauth
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+  batch:
+    timeout: "200ms"
+
+exporters:
+  otlp_grpc:
+    endpoint: "upstream.example.com:4317"
+    tls:
+      insecure: false
+
+extensions:
+  health_check:
+    endpoint: "0.0.0.0:13134"
+  oidcclientauth:
+    issuer_url: "https://idp.example.com/"
+    audience: "aud-1"
+    discovery_retry: "5s"
+    jwks_refresh: "1h0m0s"
+    required_scope: "otlp:send"
+    required_claims: ["sub", "email"]
+    clock_skew: "0s"
+    rejection_log_interval: "10s"
+
+service:
+  extensions: [health_check, oidcclientauth]
+  telemetry:
+    logs:
+      level: "debug"
+      encoding: "console"
+      output_paths: ["stdout"]
+      error_output_paths: ["stderr"]
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: "127.0.0.1"
+                port: 9888
+  pipelines:
+    traces:
+      receivers: [otlpsingleport]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_grpc]
+    logs:
+      receivers: [otlpsingleport]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_grpc]

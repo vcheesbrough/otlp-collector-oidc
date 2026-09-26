@@ -266,9 +266,19 @@ Stock `${env:…}` substitution yields strings only: it cannot turn `k=v,k=v` in
 different exporter component. So the binary has a render step: `otlp-collector-oidc run`
 reads the environment, renders the embedded `collector.yaml.tmpl`, validates the
 result with the collector's own config loader, and starts the collector on it.
-Setting `COLLECTOR_CONFIG` to a mounted file skips rendering entirely. The rendered
-YAML is written to `/tmp` and logged at debug, so "what config am I actually running"
-is one command.
+Setting `COLLECTOR_CONFIG` to a mounted file skips rendering entirely; the rendered
+file and a mounted one reach the collector through the same file provider, so every
+behaviour holds for both. The rendered YAML is written to
+`/tmp/otlp-collector-oidc.yaml` (the temporary directory) and logged at debug, so
+"what config am I actually running" is one command, and the startup line records the
+source and the value every variable took.
+
+Every value is rendered as a quoted scalar with `$` doubled, so no variable can inject
+YAML or a `${…}` reference: a value reaches its component as the literal string the
+deployer set. An empty variable counts as unset. Every missing or malformed variable
+is reported at once, by name and value, before the collector is built; a value that
+parses but that a component refuses (a body cap below 6, a negative skew) is the
+component's own validation error.
 
 ### 6.2 Reference
 
@@ -296,9 +306,10 @@ without it, naming the variable.
 | --- | --- | --- |
 | `LISTEN_ADDR` | `0.0.0.0:4318` | The one listener: TLS; OTLP/gRPC and OTLP/HTTP on the same port, told apart per request (h2 + `application/grpc` → gRPC; `/v1/…` → HTTP). Same authenticator on both |
 | `TLS_CERT_FILE` | `/etc/otlp-collector-oidc/tls/cert.pem` | Embedded self-signed pair unless overridden |
-| `TLS_KEY_FILE` | `/etc/otlp-collector-oidc/tls/key.pem` | |
+| `TLS_KEY_FILE` | `/etc/otlp-collector-oidc/tls/key.pem` | Set together with `TLS_CERT_FILE` |
+| `TLS_RELOAD_INTERVAL` | `1m` | The pair is re-read at the first handshake after this interval, so a rotated certificate needs no restart |
 | `MAX_REQUEST_BODY_BYTES` | `4194304` | Cap on the **decompressed** body → 413 |
-| `CORS_ALLOWED_ORIGINS` | *(empty = CORS off)* | For browsers on a different origin; comma-separated |
+| `CORS_ALLOWED_ORIGINS` | *(empty = CORS off)* | For browsers on a different origin; comma-separated. Allows `Authorization`, `Content-Type` and `Content-Encoding` |
 
 **Payload bounds (spans and logs)**
 
@@ -356,21 +367,23 @@ logs to Loki's OTLP endpoint with no collector between.
 | --- | --- | --- |
 | `HEALTH_ADDR` | `127.0.0.1:13133` | Liveness only; never checks upstream |
 | `SELF_METRICS_ADDR` | `0.0.0.0:8888` | Prometheus scrape of the collector's own metrics |
-| `LOG_LEVEL` | `info` | Applies to both outputs |
+| `LOG_LEVEL` | `info` | Applies to both outputs; at `debug` the rendered configuration is logged |
 | `LOG_FORMAT` | `json` | Stdout encoding, `json` or `console` |
 | `LOG_OUTPUT` | `both` | `both`, `otlp` or `stdout`. Own logs go to the logs upstream as OTLP unless `stdout`; stdout keeps a copy unless `otlp`. On a platform that also ships container stdout to the same store, pick one |
 | `OTEL_SERVICE_NAME` | `otlp-collector-oidc` | This process's own `service.name` on its logs and metrics |
 | `OTEL_RESOURCE_ATTRIBUTES` | *(empty)* | This process's own resource attributes, the SDK convention. Not what is stamped on client data — that is `CLIENT_RESOURCE_ATTRIBUTES` |
-| `COLLECTOR_CONFIG` | `/etc/otlp-collector-oidc/collector.yaml` | Mount your own pipeline to replace the shipped one; the custom components are still available to it |
+| `COLLECTOR_CONFIG` | *(empty = render the shipped pipeline)* | Path of a mounted pipeline that replaces the shipped one; nothing is rendered, and the custom components are still available to it |
 
 **Trust roots are not a knob.** A provider or upstream signed by a private CA is
 handled the standard Go way: mount the CA and set `SSL_CERT_FILE` or `SSL_CERT_DIR`.
 `OTEL_EXPORTER_OTLP_CERTIFICATE` exists only because it is a zero-code passthrough of
 the exporter's `tls.ca_file` and scoping trust to upstream alone is a real need.
 
-The configuration reference is generated from one source (the config structs and the
-annotated template), and CI fails if a variable is used in one and missing from the
-other.
+The configuration reference, `docs/configuration.md`, is generated from one source —
+the tags on the variable structs in `internal/render`, which hold each variable's
+name, default, required-ness and description once — and CI fails if the template
+renders a field that is not a variable, if a variable is not rendered, or if the
+reference is stale.
 
 ## 7. The token profile — the contract with any OIDC provider
 
@@ -483,6 +496,12 @@ suite, so a version bump re-proves them):
   drops for a non-gRPC answer; so the error handler answers gRPC requests with a
   trailers-only gRPC status carrying it (§4.1). The integration suite asserts the
   exact text over both protocols.
+- The receiver's `tls:` block reloads a mounted pair: `configtls`'s `reload_interval`
+  re-reads it at the first handshake after the interval, rendered from
+  `TLS_RELOAD_INTERVAL`. The non-root runtime user reads a mounted pair that is
+  world-readable (the image smoke mounts one and verifies it with `curl --cacert`).
+- `confighttp`'s CORS allows `Content-Type` implicitly only when `allowed_headers`
+  is empty (rs/cors v1.11), despite its documentation; the renderer lists it.
 - `client.FromContext(ctx).Auth` inside the handlers — gRPC through `ServeHTTP` and
   HTTP alike — carries the auth data the interceptor set: grpc-go's handler transport
   derives the stream context from the request's (a receiver unit test until the
@@ -501,8 +520,6 @@ suite, so a version bump re-proves them):
   does not also read `OTEL_RESOURCE_ATTRIBUTES` and double it, and that
   `OTEL_EXPORTER_OTLP_*` is not picked up for self-traces.
 - `deltatocumulative` covers histograms and exponential histograms, not only sums.
-- The receiver's `tls:` block reloads a mounted certificate (`reload_interval`); if
-  not, document a restart. The non-root runtime user can read the mounted pair.
 - authentik: a provider without `signing_key` issues a non-RS or opaque token; `scope`
   on the access token is space-delimited; `hashed_user_id` `sub` is stable across
   provider edits other than `sub_mode`.

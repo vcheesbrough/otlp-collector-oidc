@@ -39,6 +39,14 @@ extensions:
     endpoint: ${env:HEALTH_ADDR}
 service:
   extensions: [health_check]
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: ${env:HARNESS_METRICS_HOST}
+                port: ${env:HARNESS_METRICS_PORT}
   pipelines:
     traces:
       receivers: [otlpsingleport]

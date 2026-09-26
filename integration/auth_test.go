@@ -266,7 +266,7 @@ func TestAuth(t *testing.T) {
 		}
 		out := env.collector.Output()
 		for _, reason := range []string{"no_token", "invalid_token", "missing_scope", "missing_claim"} {
-			warnings := regexp.MustCompile(`(?m)^.*\bwarn\b.*Refused a request.*"reason": "`+reason+`".*$`).FindAllString(out, -1)
+			warnings := regexp.MustCompile(`(?m)^.*\bwarn\b.*Refused a request.*"reason": ?"`+reason+`".*$`).FindAllString(out, -1)
 			assert.Len(t, warnings, 1, "warnings for %s:\n%s", reason, strings.Join(warnings, "\n"))
 		}
 		for _, token := range tokens {

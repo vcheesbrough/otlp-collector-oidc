@@ -43,11 +43,12 @@ RUN addgroup -S -g 10001 otel && adduser -S -D -H -u 10001 -G otel otel \
 COPY --from=build /out/otlp-collector-oidc /usr/local/bin/otlp-collector-oidc
 COPY --chown=otel:otel --chmod=0400 --from=tls /tls/key.pem /etc/otlp-collector-oidc/tls/key.pem
 COPY --chmod=0444 --from=tls /tls/cert.pem /etc/otlp-collector-oidc/tls/cert.pem
-COPY --chmod=0444 config/collector.yaml /etc/otlp-collector-oidc/collector.yaml
 USER 10001:10001
 EXPOSE 4318 8888
 # Liveness only: the process and its pipelines, never the upstream.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --start-interval=1s --retries=3 \
   CMD wget -q -O /dev/null "http://${HEALTH_ADDR:-127.0.0.1:13133}/" || exit 1
+# run renders the configuration from the environment (docs/configuration.md)
+# into /tmp and starts the collector on it.
 ENTRYPOINT ["/usr/local/bin/otlp-collector-oidc"]
-CMD ["--config", "/etc/otlp-collector-oidc/collector.yaml"]
+CMD ["run"]

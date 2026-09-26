@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
@@ -33,10 +35,13 @@ const (
 // and, optionally, a configuration other than the shipped one.
 type Options struct {
 	// Env is added to the variables the harness sets itself (LISTEN_ADDR,
-	// HEALTH_ADDR) and may override them.
+	// HEALTH_ADDR, SELF_METRICS_ADDR) and may override them. Nothing else
+	// from the test's own environment reaches the process.
 	Env map[string]string
-	// ConfigYAML, when set, replaces the shipped configuration. It may use
-	// ${env:LISTEN_ADDR} and ${env:HEALTH_ADDR} like the shipped one.
+	// ConfigYAML, when set, is mounted as COLLECTOR_CONFIG in place of the
+	// shipped pipeline. Besides the product's variables it may read
+	// ${env:HARNESS_METRICS_HOST} and ${env:HARNESS_METRICS_PORT}, the
+	// own-metrics address split as the Prometheus reader wants it.
 	ConfigYAML string
 }
 
@@ -51,6 +56,8 @@ type Collector struct {
 
 	cmd      *exec.Cmd
 	output   *lockedBuffer
+	stdout   *lockedBuffer
+	stderr   *lockedBuffer
 	exited   chan struct{}
 	exitCode int
 }
@@ -78,10 +85,12 @@ func Start(t *testing.T, b Binary, opts Options) *Collector {
 	return c
 }
 
-// Refused is a collector that would not start: its exit code and output.
+// Refused is a collector that would not start: its exit code, everything it
+// wrote, and what it wrote to stderr alone.
 type Refused struct {
 	ExitCode int
 	Output   string
+	Stderr   string
 }
 
 // RunToExit runs the binary with opts for a shape that must refuse to start,
@@ -96,7 +105,7 @@ func RunToExit(t *testing.T, b Binary, opts Options) Refused {
 	for {
 		select {
 		case <-c.exited:
-			return Refused{ExitCode: c.exitCode, Output: c.Output()}
+			return Refused{ExitCode: c.exitCode, Output: c.Output(), Stderr: c.stderr.String()}
 		case <-deadline:
 			_ = c.cmd.Process.Kill()
 			<-c.exited
@@ -118,36 +127,38 @@ func launch(t *testing.T, b Binary, opts Options) *Collector {
 		HealthAddr:  freeAddr(t),
 		MetricsAddr: freeAddr(t),
 		output:      &lockedBuffer{},
+		stdout:      &lockedBuffer{},
+		stderr:      &lockedBuffer{},
 		exited:      make(chan struct{}),
 	}
-	_, metricsPort, err := net.SplitHostPort(c.MetricsAddr)
+	metricsHost, metricsPort, err := net.SplitHostPort(c.MetricsAddr)
 	require.NoError(t, err)
 
-	configPath := b.ShippedConfig()
-	if opts.ConfigYAML != "" {
-		configPath = t.TempDir() + "/collector.yaml"
-		require.NoError(t, os.WriteFile(configPath, []byte(opts.ConfigYAML), 0o600))
-	}
-
 	env := map[string]string{
-		"LISTEN_ADDR": c.ListenAddr,
-		"HEALTH_ADDR": c.HealthAddr,
-		"GOCOVERDIR":  coverDir(t),
+		"LISTEN_ADDR":       c.ListenAddr,
+		"HEALTH_ADDR":       c.HealthAddr,
+		"SELF_METRICS_ADDR": c.MetricsAddr,
+		// The rendered configuration goes to the temporary directory; one
+		// per process, so shapes running side by side do not share it.
+		"TMPDIR":     t.TempDir(),
+		"GOCOVERDIR": coverDir(t),
+	}
+	if opts.ConfigYAML != "" {
+		path := filepath.Join(t.TempDir(), "collector.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(opts.ConfigYAML), 0o600))
+		env["COLLECTOR_CONFIG"] = path
+		env["HARNESS_METRICS_HOST"] = metricsHost
+		env["HARNESS_METRICS_PORT"] = metricsPort
 	}
 	maps.Copy(env, opts.Env)
-
-	// The own-metrics port is fixed in the shipped configuration; the
-	// harness moves it so that shapes can run side by side.
-	metricsOverride := "yaml:service::telemetry::metrics::readers: " +
-		"[{pull: {exporter: {prometheus: {host: 127.0.0.1, port: " + metricsPort + "}}}}]"
 
 	// Not CommandContext: the harness stops the process itself, with SIGTERM,
 	// so that a clean shutdown is observable as exit code 0.
 	// #nosec G204 -- the binary and arguments are the harness's own.
-	c.cmd = exec.Command(b.Path, "--config", configPath, "--config", metricsOverride) //nolint:noctx // stopped by stop(), see above
+	c.cmd = exec.Command(b.Path, "run") //nolint:noctx // stopped by stop(), see above
 	c.cmd.Env = envList(env)
-	c.cmd.Stdout = c.output
-	c.cmd.Stderr = c.output
+	c.cmd.Stdout = io.MultiWriter(c.output, c.stdout)
+	c.cmd.Stderr = io.MultiWriter(c.output, c.stderr)
 	require.NoError(t, c.cmd.Start())
 
 	go func() {
@@ -166,6 +177,11 @@ func (c *Collector) PID() int {
 // Output is everything the process has written to stdout and stderr so far.
 func (c *Collector) Output() string {
 	return c.output.String()
+}
+
+// Stdout is what the process has written to stdout alone: its log lines.
+func (c *Collector) Stdout() string {
+	return c.stdout.String()
 }
 
 // Healthy reports whether the health endpoint answers 200.

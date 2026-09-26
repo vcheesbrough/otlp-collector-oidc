@@ -1,0 +1,83 @@
+{{- /*
+The shipped pipeline. `otlp-collector-oidc run` renders it from the
+environment (internal/render); every value below comes from a variable in
+docs/configuration.md. Strings pass through `q`, which quotes them and escapes
+"$", so no value can inject YAML or a ${...} reference.
+
+Every request is authenticated by oidcclientauth before it is dispatched.
+Traces and logs: otlpsingleport → memory_limiter → batch → otlp_grpc.
+Metrics have no pipeline yet, so the receiver answers 404 / Unimplemented for
+them until the bounded metrics pipeline lands.
+*/ -}}
+# Rendered by otlp-collector-oidc run from the environment.
+# The variables are documented in docs/configuration.md.
+
+receivers:
+  otlpsingleport:
+    endpoint: {{ q .Listener.ListenAddr }}
+    max_request_body_size: {{ .Listener.MaxRequestBodyBytes }}
+    tls:
+      cert_file: {{ q .Listener.TLSCertFile }}
+      key_file: {{ q .Listener.TLSKeyFile }}
+      reload_interval: {{ q .Listener.TLSReloadInterval }}
+{{- with .Listener.CORSAllowedOrigins }}
+    cors:
+      allowed_origins: {{ list . }}
+      # What an OTLP/HTTP export from a browser sends. rs/cors allows
+      # Content-Type implicitly only when this list is empty, so it is listed.
+      allowed_headers: ["Authorization", "Content-Type", "Content-Encoding"]
+{{- end }}
+    auth:
+      authenticator: oidcclientauth
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: {{ .Resources.MemoryLimitMiB }}
+    spike_limit_mib: {{ .Resources.MemorySpikeLimitMiB }}
+  batch:
+    timeout: {{ q .Resources.BatchTimeout }}
+
+exporters:
+  otlp_grpc:
+    endpoint: {{ q .Upstream.Endpoint.HostPort }}
+    tls:
+      insecure: {{ .Upstream.Endpoint.Insecure }}
+
+extensions:
+  health_check:
+    endpoint: {{ q .Self.HealthAddr }}
+  oidcclientauth:
+    issuer_url: {{ q .Identity.IssuerURL }}
+    audience: {{ q .Identity.Audience }}
+    discovery_retry: {{ q .Identity.DiscoveryRetry }}
+    jwks_refresh: {{ q .Identity.JWKSRefresh }}
+    required_scope: {{ q .Identity.RequiredScope }}
+    required_claims: {{ list .Identity.RequiredClaims }}
+    clock_skew: {{ q .Identity.ClockSkew }}
+    rejection_log_interval: {{ q .Identity.RejectionLogInterval }}
+
+service:
+  extensions: [health_check, oidcclientauth]
+  telemetry:
+    logs:
+      level: {{ q .Logs.Level }}
+      encoding: {{ q .Logs.Format }}
+      output_paths: ["stdout"]
+      error_output_paths: ["stderr"]
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: {{ q .Self.SelfMetricsAddr.Host }}
+                port: {{ .Self.SelfMetricsAddr.Port }}
+  pipelines:
+    traces:
+      receivers: [otlpsingleport]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_grpc]
+    logs:
+      receivers: [otlpsingleport]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_grpc]

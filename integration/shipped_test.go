@@ -36,8 +36,15 @@ type shipped struct {
 
 func startShipped(t *testing.T, env map[string]string) shipped {
 	t.Helper()
+	return startShippedWith(t, harness.NewSink(t), env, nil)
+}
+
+// startShippedWith is startShipped with the upstream given, and, when claims
+// is set, the clients' token carrying claims(issuer) instead of the issuer's
+// defaults.
+func startShippedWith(t *testing.T, sink *harness.Sink, env map[string]string, claims func(*harness.Issuer) harness.Claims) shipped {
+	t.Helper()
 	cert := harness.NewCertificate(t)
-	sink := harness.NewSink(t)
 	iss := harness.NewIssuer(t)
 	iss.Start(t)
 	vars := oidcEnv(iss)
@@ -50,7 +57,11 @@ func startShipped(t *testing.T, env map[string]string) shipped {
 	})
 	maps.Copy(vars, env)
 	c := harness.Start(t, binary, harness.Options{Env: vars})
-	cl := newClients(t, c.ListenAddr, cert.Pool, iss.Sign(t, jose.RS256, iss.Claims()))
+	tokenClaims := iss.Claims()
+	if claims != nil {
+		tokenClaims = claims(iss)
+	}
+	cl := newClients(t, c.ListenAddr, cert.Pool, iss.Sign(t, jose.RS256, tokenClaims))
 	awaitReady(t, cl)
 	return shipped{collector: c, sink: sink, issuer: iss, clients: cl}
 }
@@ -65,6 +76,8 @@ func TestShipped(t *testing.T) {
 		t.Run("dispatch", dispatchScenarios(env))
 		t.Run("fidelity", fidelityScenarios(env))
 		t.Run("bodies", bodyScenarios(env))
+		t.Run("cors off", corsOff(env))
+		t.Run("logs", defaultLogs(env))
 	})
 	t.Run("counters", acceptedCounters(env))
 	t.Run("refusals", refusalCounters(env))

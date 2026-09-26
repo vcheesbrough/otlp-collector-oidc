@@ -25,13 +25,8 @@ const modulePath = "github.com/vcheesbrough/otlp-collector-oidc"
 type Binary struct {
 	Path    string
 	Version string
-	// Root is the repository root, where the shipped configuration lives.
+	// Root is the repository root.
 	Root string
-}
-
-// ShippedConfig is the path of the configuration the image ships.
-func (b Binary) ShippedConfig() string {
-	return filepath.Join(b.Root, "config", "collector.yaml")
 }
 
 // LocateOrBuild returns the binary named by EnvBinary and EnvVersion when

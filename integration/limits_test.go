@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -86,7 +87,9 @@ func tracesOfSize(t *testing.T, marker string, size int) ptraceotlp.ExportReques
 }
 
 // TestRefusesToStart proves a configuration the collector cannot serve stops
-// it at start, with an error that names the problem, rather than later.
+// it before it listens, with an error on stderr that names the problem: the
+// variable and its value when the environment is at fault, the setting when
+// a component refuses a value that parsed.
 func TestRefusesToStart(t *testing.T) {
 	cert := harness.NewCertificate(t)
 	base := map[string]string{
@@ -96,16 +99,20 @@ func TestRefusesToStart(t *testing.T) {
 		"OIDC_ISSUER_URL":             "http://127.0.0.1:1",
 		"OIDC_AUDIENCE":               harness.Audience,
 	}
+	// with is base with k set to v, or without k when v is empty.
 	with := func(k, v string) map[string]string {
-		env := map[string]string{}
-		for bk, bv := range base {
-			env[bk] = bv
-		}
+		env := maps.Clone(base)
 		if v == "" {
 			delete(env, k)
 		} else {
 			env[k] = v
 		}
+		return env
+	}
+	// set is base with k set to v, even to the empty string.
+	set := func(k, v string) map[string]string {
+		env := maps.Clone(base)
+		env[k] = v
 		return env
 	}
 	emptyEndpoint := strings.Replace(directConfig, "endpoint: ${env:LISTEN_ADDR}", `endpoint: ""`, 1)
@@ -116,22 +123,39 @@ func TestRefusesToStart(t *testing.T) {
 		opts     harness.Options
 		wantText string
 	}{
+		// Required variables, unset or empty.
+		{name: "no issuer", opts: harness.Options{Env: with("OIDC_ISSUER_URL", "")}, wantText: "OIDC_ISSUER_URL is required"},
+		{name: "empty issuer", opts: harness.Options{Env: set("OIDC_ISSUER_URL", "")}, wantText: "OIDC_ISSUER_URL is required"},
+		{name: "no audience", opts: harness.Options{Env: with("OIDC_AUDIENCE", "")}, wantText: "OIDC_AUDIENCE is required"},
+		{name: "no upstream endpoint", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "")}, wantText: "OTEL_EXPORTER_OTLP_ENDPOINT is required"},
+		// Values that do not parse.
+		{name: "bad duration", opts: harness.Options{Env: with("OIDC_DISCOVERY_RETRY", "soon")}, wantText: `invalid OIDC_DISCOVERY_RETRY "soon": must be a duration`},
+		{name: "bad listen address", opts: harness.Options{Env: with("LISTEN_ADDR", "4318")}, wantText: `invalid LISTEN_ADDR "4318": must be host:port`},
+		{name: "bad health port", opts: harness.Options{Env: with("HEALTH_ADDR", "127.0.0.1:http")}, wantText: `invalid HEALTH_ADDR "127.0.0.1:http": port must be a number`},
+		{name: "bad MiB", opts: harness.Options{Env: with("MEMORY_LIMIT_MIB", "64MiB")}, wantText: `invalid MEMORY_LIMIT_MIB "64MiB": must be a whole number of MiB`},
+		{name: "bad body cap", opts: harness.Options{Env: with("MAX_REQUEST_BODY_BYTES", "4M")}, wantText: `invalid MAX_REQUEST_BODY_BYTES "4M": must be a whole number`},
+		{name: "upstream without a scheme", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "collector:4317")}, wantText: `invalid OTEL_EXPORTER_OTLP_ENDPOINT "collector:4317": must be an http:// or https:// URL`},
+		{name: "bad log level", opts: harness.Options{Env: with("LOG_LEVEL", "verbose")}, wantText: `invalid LOG_LEVEL "verbose": must be debug, info, warn or error`},
+		{name: "bad log format", opts: harness.Options{Env: with("LOG_FORMAT", "text")}, wantText: `invalid LOG_FORMAT "text": must be json or console`},
+		// Rules across a group's variables.
+		{name: "certificate without its key", opts: harness.Options{Env: with("TLS_KEY_FILE", "")}, wantText: "TLS_CERT_FILE and TLS_KEY_FILE must be set together"},
+		{name: "spike limit above the limit", opts: harness.Options{Env: with("MEMORY_SPIKE_LIMIT_MIB", "64")}, wantText: "MEMORY_SPIKE_LIMIT_MIB (64) must be less than MEMORY_LIMIT_MIB (64)"},
+		// Values that parse, refused by the component they configure.
 		{name: "body cap of zero", opts: harness.Options{Env: with("MAX_REQUEST_BODY_BYTES", "0")}, wantText: "max_request_body_size must be between 6 and 2147483647"},
 		{name: "body cap below the gRPC frame header", opts: harness.Options{Env: with("MAX_REQUEST_BODY_BYTES", "5")}, wantText: "max_request_body_size must be between 6 and 2147483647"},
-		{name: "no listen endpoint", opts: harness.Options{ConfigYAML: emptyEndpoint, Env: base}, wantText: "endpoint must be set"},
-		{name: "no upstream endpoint", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "")}, wantText: "endpoint"},
-		{name: "no issuer", opts: harness.Options{Env: with("OIDC_ISSUER_URL", "")}, wantText: "issuer_url must be set"},
 		{name: "issuer is not a URL", opts: harness.Options{Env: with("OIDC_ISSUER_URL", "issuer.example.com")}, wantText: "issuer_url must be an absolute http or https URL"},
-		{name: "no audience", opts: harness.Options{Env: with("OIDC_AUDIENCE", "")}, wantText: "audience must be set"},
 		{name: "required scope with a space", opts: harness.Options{Env: with("REQUIRED_SCOPE", "telemetry write")}, wantText: "required_scope must be one non-empty scope token"},
 		{name: "negative clock skew", opts: harness.Options{Env: with("CLOCK_SKEW", "-1s")}, wantText: "clock_skew must not be negative"},
+		// A mounted configuration is the collector's to validate.
+		{name: "no listen endpoint", opts: harness.Options{ConfigYAML: emptyEndpoint, Env: base}, wantText: "endpoint must be set"},
+		{name: "mounted file missing", opts: harness.Options{Env: with("COLLECTOR_CONFIG", "/nonexistent/collector.yaml")}, wantText: "/nonexistent/collector.yaml"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := harness.RunToExit(t, binary, tc.opts)
 			assert.NotZero(t, got.ExitCode, got.Output)
-			assert.Contains(t, got.Output, tc.wantText)
+			assert.Contains(t, got.Stderr, tc.wantText, "stderr, of all output:\n%s", got.Output)
 		})
 	}
 }
