@@ -241,9 +241,14 @@ client, like every other resource attribute. Two are deliberately never in this 
 
 All stock components, rendered from an embedded template at startup (§6).
 
-- **Traces and logs.** `attributes` upserts identity from `from_context: auth.<key>`;
-  `transform` lifts the static resource attributes onto `resource.attributes` and
-  clamps far-future timestamps; `filter` drops
+- **Traces and logs.** `attributes/identity` deletes whatever the client sent under
+  each `CLAIM_ATTRIBUTES` target and upserts it from `from_context: auth.<target>`,
+  so a claim the token lacks leaves the attribute absent rather than forged;
+  `resource/deployment` upserts the `CLIENT_RESOURCE_ATTRIBUTES` values onto every
+  resource (as built: the stock `resource` processor with the literal values, not
+  an auth-context copy lifted by `transform`, so no temporary copy ever exists; the
+  authenticator's `resource_attributes` stays available to a mounted pipeline);
+  `transform` clamps far-future timestamps; `filter` drops
   `service.name` outside `ALLOWED_SERVICE_NAMES` and far-past spans. The collector
   stamps no fixed marker of its own: the client-origin attribute is one of the
   deployer's `resource_attributes` keys. No attribute count or length caps: the
@@ -526,6 +531,9 @@ suite, so a version bump re-proves them):
   HTTP alike — carries the auth data the interceptor set: grpc-go's handler transport
   derives the stream context from the request's (a receiver unit test until the
   pipeline reads the auth context).
+- The `attributes` processor skips an upsert whose `from_context` key is absent
+  (`coreinternal/attraction`, v0.161.0), so an optional claim needs no empty default;
+  a delete before each upsert removes a client's forged value.
 - The collector supports an OTLP exporter under `service::telemetry::logs::processors`
   (file format 0.3). Its export failures go to the SDK's error handler, which the
   collector points at its stdout-only logger, built before the OTLP tee: they never
@@ -542,9 +550,6 @@ suite, so a version bump re-proves them):
 
 **Open:**
 
-- The `attributes` processor skips an action whose `from_context` key is absent
-  (needed for optional claims); otherwise export empty defaults and delete them in
-  `transform`.
 - OTTL `Now() + Duration(...)` arithmetic in the pinned version.
 - `deltatocumulative` covers histograms and exponential histograms, not only sums.
 - authentik: a provider without `signing_key` issues a non-RS or opaque token; `scope`

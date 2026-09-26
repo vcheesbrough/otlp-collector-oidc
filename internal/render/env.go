@@ -54,6 +54,8 @@ type IdentitySettings struct {
 	JWKSRefresh          time.Duration `env:"OIDC_JWKS_REFRESH"      default:"10m"                      doc:"JWKS re-read interval: the longest a key the provider removes is still trusted"`
 	RequiredScope        string        `env:"REQUIRED_SCOPE"         default:"telemetry:write"          doc:"Must appear in 'scope' (or 'scp')"`
 	RequiredClaims       []string      `env:"REQUIRED_CLAIMS"        default:"sub,preferred_username"   doc:"Comma-separated claims that must each be present and non-empty"`
+	ClaimAttributes      KeyValueList  `env:"CLAIM_ATTRIBUTES"       default:"sub=user.id,preferred_username=user.name,email=user.email,name=user.full_name" doc:"'claim=attribute,...': each claim the token carries becomes that span and log attribute, overwriting what the client sent; a claim the token lacks leaves the attribute absent, never the client's value. Not 'service.name' or 'service.version', which are the client's"`
+	ClientResourceAttrs  KeyValueList  `env:"CLIENT_RESOURCE_ATTRIBUTES"                                  doc:"'key=value,...' stamped onto every client resource, overwriting the client's: 'deployment.environment.name' and a path marker such as 'telemetry_source=client'. Empty keeps the client's resource as sent. Not 'OTEL_RESOURCE_ATTRIBUTES', which describes this process"`
 	ClockSkew            time.Duration `env:"CLOCK_SKEW"             default:"60s"                      doc:"Tolerance on 'exp', 'nbf' and 'iat'"`
 	RejectionLogInterval time.Duration `env:"REJECTION_LOG_INTERVAL" default:"60s"                      doc:"At most one warning per refusal reason per interval"`
 }
@@ -99,6 +101,36 @@ type OwnSettings struct {
 // SourceSettings chooses between the shipped pipeline and a mounted one.
 type SourceSettings struct {
 	CollectorConfig string `env:"COLLECTOR_CONFIG" doc:"Path of a collector configuration to run instead of the shipped pipeline. Nothing is rendered: every other variable is ignored unless that file reads it with '${env:...}', except 'LOG_LEVEL' and 'LOG_FORMAT', which still govern the run command's own lines. The custom components remain available to it"`
+}
+
+// Validate keeps the client's own identity keys out of both maps, and each
+// claim to one attribute.
+func (s IdentitySettings) Validate() error {
+	var errs []error
+	targets := map[string]string{}
+	for _, kv := range s.ClaimAttributes {
+		switch {
+		case kv.Value == "":
+			errs = append(errs, fmt.Errorf("CLAIM_ATTRIBUTES: claim %s maps to no attribute", kv.Key))
+		case clientOwned(kv.Value):
+			errs = append(errs, fmt.Errorf("CLAIM_ATTRIBUTES: %s is the client's, not a claim's", kv.Value))
+		case targets[kv.Value] != "":
+			errs = append(errs, fmt.Errorf("CLAIM_ATTRIBUTES: claims %s and %s both map to %s", targets[kv.Value], kv.Key, kv.Value))
+		}
+		targets[kv.Value] = kv.Key
+	}
+	for _, kv := range s.ClientResourceAttrs {
+		if clientOwned(kv.Key) {
+			errs = append(errs, fmt.Errorf("CLIENT_RESOURCE_ATTRIBUTES: %s is the client's", kv.Key))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// clientOwned is a key the client states about itself and the collector
+// never overwrites (DESIGN §4.2).
+func clientOwned(key string) bool {
+	return key == "service.name" || key == "service.version"
 }
 
 // Validate refuses a certificate without its key, or the reverse: half a

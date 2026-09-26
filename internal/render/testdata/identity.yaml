@@ -20,47 +20,42 @@ processors:
   # Identity from the token, on every span and log record (identity.go).
   attributes/identity:
     actions:
-      - key: "user.id"
+      - key: "enduser.id"
         action: delete
-      - key: "user.id"
+      - key: "enduser.id"
         action: upsert
-        from_context: "auth.user.id"
-      - key: "user.name"
+        from_context: "auth.enduser.id"
+      - key: "enduser.groups"
         action: delete
-      - key: "user.name"
+      - key: "enduser.groups"
         action: upsert
-        from_context: "auth.user.name"
-      - key: "user.email"
-        action: delete
-      - key: "user.email"
+        from_context: "auth.enduser.groups"
+  # The deployment's static attributes, on every client resource.
+  resource/deployment:
+    attributes:
+      - key: "deployment.environment.name"
+        value: "prod"
         action: upsert
-        from_context: "auth.user.email"
-      - key: "user.full_name"
-        action: delete
-      - key: "user.full_name"
+      - key: "telemetry_source"
+        value: "client"
         action: upsert
-        from_context: "auth.user.full_name"
   batch:
     timeout: "5s"
 
 exporters:
-  otlp_http:
-    endpoint: "https://otlp.example.com/otlp/"
+  otlp_grpc:
+    endpoint: "collector:4317"
     tls:
-      insecure: false
-      insecure_skip_verify: false
-    headers:
-      - name: "X-Scope-OrgID"
-        value: "tenant-1"
+      insecure: true
     timeout: "10s"
     compression: "gzip"
     sending_queue:
       queue_size: 1000
     retry_on_failure:
       enabled: true
-      initial_interval: "2s"
-      max_elapsed_time: "2s"
-      max_interval: "2s"
+      initial_interval: "5s"
+      max_elapsed_time: "1m0s"
+      max_interval: "30s"
 
 extensions:
   health_check:
@@ -73,10 +68,8 @@ extensions:
     required_scope: "telemetry:write"
     required_claims: ["sub", "preferred_username"]
     claim_attributes:
-      "sub": "user.id"
-      "preferred_username": "user.name"
-      "email": "user.email"
-      "name": "user.full_name"
+      "sub": "enduser.id"
+      "groups": "enduser.groups"
     clock_skew: "1m0s"
     rejection_log_interval: "1m0s"
 
@@ -93,7 +86,7 @@ service:
       output_paths: ["stdout"]
       error_output_paths: ["stderr"]
       # Own logs to the logs upstream (LOG_OUTPUT), as the SDK's schema has it.
-      processors: [{"batch":{"exporter":{"otlp":{"protocol":"http/protobuf","endpoint":"https://otlp.example.com/otlp/v1/logs","headers":[{"name":"X-Scope-OrgID","value":"tenant-1"}],"compression":"gzip","timeout":10000}}}}]
+      processors: [{"batch":{"exporter":{"otlp":{"protocol":"grpc","endpoint":"http://collector:4317","insecure":true,"compression":"gzip","timeout":10000}}}}]
     metrics:
       readers:
         - pull:
@@ -104,9 +97,9 @@ service:
   pipelines:
     traces:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, attributes/identity, batch]
-      exporters: [otlp_http]
+      processors: [memory_limiter, attributes/identity, resource/deployment, batch]
+      exporters: [otlp_grpc]
     logs:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, attributes/identity, batch]
-      exporters: [otlp_http]
+      processors: [memory_limiter, attributes/identity, resource/deployment, batch]
+      exporters: [otlp_grpc]

@@ -168,9 +168,11 @@ unit and integration tiers, and the `test-reports` artifact holds the JUnit file
 Pre-release (`0.x`): single-port OTLP/gRPC and OTLP/HTTP over TLS, every request
 authenticated with an OIDC access token, configured entirely by environment, forwarding
 traces and logs to OTLP/gRPC or OTLP/HTTP upstreams, per signal, set by the standard
-`OTEL_EXPORTER_OTLP_*` variables. The identity is validated but not yet stamped onto
-the telemetry; its own logs go upstream as OTLP. Identity stamping, the metrics
-pipeline follow; the dashboard, alerts and runbook ship with it —
+`OTEL_EXPORTER_OTLP_*` variables. The token's identity is stamped onto the
+telemetry — `user.id`, `user.name`, `user.email`, `user.full_name` on every
+span and log record (`CLAIM_ATTRIBUTES`), the deployment's attributes on every
+resource (`CLIENT_RESOURCE_ATTRIBUTES`) — and its own logs go upstream as OTLP, with
+a dashboard, alerts and runbook. Payload bounds and the metrics pipeline follow —
 [board](https://bored.desync.link/boards/otlp-collector-oidc).
 
 ## Licence

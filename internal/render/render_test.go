@@ -106,6 +106,15 @@ var shapes = map[string]map[string]string{
 		"OTEL_EXPORTER_OTLP_LOGS_HEADERS":       "x-scope-orgid=b",
 		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT":   "http://mimir.example.com:4317",
 	},
+	// Identity to renamed attributes, and the deployment's attributes on
+	// every client resource.
+	"identity": {
+		"OIDC_ISSUER_URL":             "https://idp.example.com/",
+		"OIDC_AUDIENCE":               "telemetry",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317",
+		"CLAIM_ATTRIBUTES":            "sub=enduser.id, groups=enduser.groups",
+		"CLIENT_RESOURCE_ATTRIBUTES":  "deployment.environment.name=prod,telemetry_source=client",
+	},
 	// Values that would break naive substitution: quotes, a newline, YAML
 	// syntax and ${...} references must arrive as literal strings.
 	"hostile": {
@@ -116,6 +125,8 @@ var shapes = map[string]map[string]string{
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317",
 		"OTEL_EXPORTER_OTLP_HEADERS":  "x-a=%22%24%7Benv%3AHOME%7D%20%23%20exporters%3A%20%7B%7D",
 		"OTEL_RESOURCE_ATTRIBUTES":    "a\"b${x}#: {}=%24%7Benv%3AHOME%7D",
+		"CLAIM_ATTRIBUTES":            "sub=a\"b${x}",
+		"CLIENT_RESOURCE_ATTRIBUTES":  "k${y}=v%22${z}",
 	},
 }
 

@@ -17,6 +17,29 @@ processors:
     check_interval: 1s
     limit_mib: 64
     spike_limit_mib: 16
+  # Identity from the token, on every span and log record (identity.go).
+  attributes/identity:
+    actions:
+      - key: "user.id"
+        action: delete
+      - key: "user.id"
+        action: upsert
+        from_context: "auth.user.id"
+      - key: "user.name"
+        action: delete
+      - key: "user.name"
+        action: upsert
+        from_context: "auth.user.name"
+      - key: "user.email"
+        action: delete
+      - key: "user.email"
+        action: upsert
+        from_context: "auth.user.email"
+      - key: "user.full_name"
+        action: delete
+      - key: "user.full_name"
+        action: upsert
+        from_context: "auth.user.full_name"
   batch:
     timeout: "5s"
 
@@ -70,6 +93,11 @@ extensions:
     jwks_refresh: "10m0s"
     required_scope: "telemetry:write"
     required_claims: ["sub", "preferred_username"]
+    claim_attributes:
+      "sub": "user.id"
+      "preferred_username": "user.name"
+      "email": "user.email"
+      "name": "user.full_name"
     clock_skew: "1m0s"
     rejection_log_interval: "1m0s"
 
@@ -97,9 +125,9 @@ service:
   pipelines:
     traces:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter, attributes/identity, batch]
       exporters: [otlp_grpc/traces]
     logs:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter, attributes/identity, batch]
       exporters: [otlp_http/logs]
