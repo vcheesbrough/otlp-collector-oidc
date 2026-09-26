@@ -49,6 +49,17 @@ func metricResourceReduce() string {
 	return fmt.Sprintf(`keep_keys(resource.attributes, %s)`, ottlList(metricResourceKeys()))
 }
 
+// metricStrip is every other place a client could put attributes on a
+// metric: its scope's attributes, the metric's metadata, and the datapoints'
+// exemplars (whose filtered attributes are any key at all). None is kept.
+func metricStrip() []string {
+	return []string{
+		`keep_keys(scope.attributes, [])`,
+		`keep_keys(metric.metadata, [])`,
+		`set(datapoint.exemplars, nil)`,
+	}
+}
+
 // metricKeepKeys keeps only the allowlisted datapoint attribute keys, less
 // any key that could carry identity: every claim target, and user.*,
 // session.* and enduser.* whatever the allowlist says.

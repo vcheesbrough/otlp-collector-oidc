@@ -95,7 +95,7 @@ func (s BoundsSettings) Validate() error {
 type MetricSettings struct {
 	AllowedNames         MetricNamePattern `env:"ALLOWED_METRIC_NAMES"                            doc:"Regular expression the whole metric name must match; empty drops every client metric (each is counted)"`
 	AllowedAttributeKeys []string          `env:"ALLOWED_METRIC_ATTRIBUTE_KEYS"                   doc:"Comma-separated datapoint attribute keys kept; every other key is removed, and empty strips them all. 'user.*', 'session.*', 'enduser.*' and every 'CLAIM_ATTRIBUTES' target are removed even if listed"`
-	MaxStreams           int64             `env:"MAX_METRIC_STREAMS"     default:"2000"          doc:"Hard cap on the streams 'deltatocumulative' tracks; a datapoint of a stream beyond it is dropped and counted, not stored"`
+	MaxStreams           int64             `env:"MAX_METRIC_STREAMS"     default:"2000"          doc:"Hard cap on the delta streams 'deltatocumulative' tracks; a datapoint of a new delta stream beyond it is dropped and counted, not stored. Cumulative and gauge series pass through untracked: the name and key allowlists are what bound them"`
 	DeltaMaxStale        time.Duration     `env:"DELTA_MAX_STALE"        default:"10m"           doc:"A stream not seen for this long is forgotten, freeing its place under the cap; the processor sweeps once a minute, so it goes within this plus a minute"`
 }
 

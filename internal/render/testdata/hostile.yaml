@@ -72,6 +72,9 @@ processors:
     metric_statements:
       - "keep_keys(resource.attributes, [\"service.name\", \"service.version\"])"
       - "keep_keys(datapoint.attributes, [])"
+      - "keep_keys(scope.attributes, [])"
+      - "keep_keys(metric.metadata, [])"
+      - "set(datapoint.exemplars, nil)"
   # The deployment's static attributes, and nothing else, onto the reduced
   # resource.
   resource/metrics:

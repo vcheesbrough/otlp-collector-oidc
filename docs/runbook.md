@@ -73,13 +73,16 @@ page someone who cannot act on it.
 ## Client metrics dropped or capped (dashboard panels, no alert)
 
 **Means:** on the **Client metrics** row, *Dropped by name* is client datapoints for a
-metric outside `ALLOWED_METRIC_NAMES` (a client build shipping an unregistered metric);
+metric outside `ALLOWED_METRIC_NAMES` (a client build shipping an unregistered metric),
+or from a resource whose `service.name` is outside `ALLOWED_SERVICE_NAMES` — compare
+with *Dropped by the bounds*, which rises with the latter for the same client;
 *Streams tracked* at its limit, with `limit` refusals on *Datapoints converted and
 refused*, is a client inventing series — usually a datapoint attribute that should not
 be on the allowlist, or a new one with unbounded values.
 
 **Check first:** which client build started it (the upstream's `service.version`). Add
-a legitimate metric to `ALLOWED_METRIC_NAMES`; for a stream-cap hit, find the key and
+a legitimate metric to `ALLOWED_METRIC_NAMES`, or a legitimate service to
+`ALLOWED_SERVICE_NAMES`; for a stream-cap hit, find the key and
 take it off `ALLOWED_METRIC_ATTRIBUTE_KEYS` rather than raising `MAX_METRIC_STREAMS`.
 A stream is forgotten `DELTA_MAX_STALE` (plus up to a minute) after its last datapoint.
 

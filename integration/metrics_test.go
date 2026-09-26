@@ -33,13 +33,16 @@ const (
 
 // metricSpec is one metric with one datapoint.
 type metricSpec struct {
-	name  string
-	kind  metricKind
-	value int64  // a sum's value
-	count uint64 // a histogram's count, all in its first bucket
-	attrs map[string]any
-	start time.Time
-	at    time.Time
+	name string
+	kind metricKind
+	// forged, when set, is put on the scope's attributes, the metric's
+	// metadata and an exemplar's filtered attributes.
+	forged map[string]any
+	value  int64  // a sum's value
+	count  uint64 // a histogram's count, all in its first bucket
+	attrs  map[string]any
+	start  time.Time
+	at     time.Time
 }
 
 // metricsRequest is one resource, named service, carrying specs.
@@ -51,8 +54,14 @@ func metricsRequest(service string, resource map[string]any, specs ...metricSpec
 	_ = rm.Resource().Attributes().FromRaw(merge(rm.Resource().Attributes().AsRaw(), resource))
 	sm := rm.ScopeMetrics().AppendEmpty()
 	for _, s := range specs {
+		if s.forged != nil {
+			_ = sm.Scope().Attributes().FromRaw(s.forged)
+		}
 		m := sm.Metrics().AppendEmpty()
 		m.SetName(s.name)
+		if s.forged != nil {
+			_ = m.Metadata().FromRaw(s.forged)
+		}
 		start, at := pcommon.NewTimestampFromTime(s.start), pcommon.NewTimestampFromTime(s.at)
 		switch s.kind {
 		case kindDeltaSum, kindCumulativeSum:
@@ -67,6 +76,12 @@ func metricsRequest(service string, resource map[string]any, specs ...metricSpec
 			dp.SetTimestamp(at)
 			dp.SetIntValue(s.value)
 			_ = dp.Attributes().FromRaw(s.attrs)
+			if s.forged != nil {
+				ex := dp.Exemplars().AppendEmpty()
+				ex.SetIntValue(1)
+				ex.SetTimestamp(at)
+				_ = ex.FilteredAttributes().FromRaw(s.forged)
+			}
 		case kindDeltaHistogram:
 			h := m.SetEmptyHistogram()
 			h.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
@@ -108,6 +123,7 @@ func merge(a, b map[string]any) map[string]any {
 // receivedMetric is one arrival of a metric under a service.
 type receivedMetric struct {
 	resource map[string]any
+	scope    map[string]any
 	metric   pmetric.Metric
 }
 
@@ -122,7 +138,7 @@ func metricArrivals(sink *harness.Sink, service, name string) []receivedMetric {
 			for _, sm := range rm.ScopeMetrics().All() {
 				for _, m := range sm.Metrics().All() {
 					if m.Name() == name {
-						out = append(out, receivedMetric{resource: rm.Resource().Attributes().AsRaw(), metric: m})
+						out = append(out, receivedMetric{resource: rm.Resource().Attributes().AsRaw(), scope: sm.Scope().Attributes().AsRaw(), metric: m})
 					}
 				}
 			}
@@ -152,8 +168,11 @@ func sendMetrics(t *testing.T, cl clients, p protocol, req pmetricotlp.ExportReq
 func metricsEnv() map[string]string {
 	return map[string]string{
 		"ALLOWED_METRIC_NAMES":          `app\.(requests|latency|size)`,
-		"ALLOWED_METRIC_ATTRIBUTE_KEYS": "route,user.id,user.name,session.id",
-		"CLIENT_RESOURCE_ATTRIBUTES":    "deployment.environment.name=it,telemetry_source=client",
+		"ALLOWED_METRIC_ATTRIBUTE_KEYS": "route,user.id,user.name,session.id,login",
+		// A claim target outside the user.* prefixes: listed above, and
+		// removed anyway.
+		"CLAIM_ATTRIBUTES":           "sub=user.id,preferred_username=login",
+		"CLIENT_RESOURCE_ATTRIBUTES": "deployment.environment.name=it,telemetry_source=client",
 	}
 }
 
@@ -180,11 +199,11 @@ func TestMetrics(t *testing.T) {
 		t.Run("identity and allowlists/"+p.String(), func(t *testing.T) {
 			svc := "metrics-allow-" + p.String()
 			t0 := time.Now().Add(-time.Minute)
-			attrs := merge(forgedIdentity(), map[string]any{"route": "/checkout", "secret": "k"})
+			attrs := merge(forgedIdentity(), map[string]any{"route": "/checkout", "secret": "k", "login": "alice"})
 			resource := merge(forgedIdentity(), map[string]any{"telemetry_source": "forged", "deployment.environment.name": "forged", "host.name": "phone"})
 			before := filtered()
 			sendMetrics(t, shape.clients, p, metricsRequest(svc, resource,
-				metricSpec{name: "app.requests", kind: kindDeltaSum, value: 3, attrs: attrs, start: t0, at: t0.Add(10 * time.Second)},
+				metricSpec{name: "app.requests", kind: kindDeltaSum, value: 3, attrs: attrs, forged: forgedIdentity(), start: t0, at: t0.Add(10 * time.Second)},
 				metricSpec{name: "app.unregistered", kind: kindDeltaSum, value: 1, start: t0, at: t0.Add(10 * time.Second)},
 			))
 			got := awaitMetric(t, metrics, svc, "app.requests", 1)[0]
@@ -194,6 +213,9 @@ func TestMetrics(t *testing.T) {
 			}, got.resource, "the resource is the client build and the deployment, nothing else")
 			dp := got.metric.Sum().DataPoints().At(0)
 			assert.Equal(t, map[string]any{"route": "/checkout"}, dp.Attributes().AsRaw(), "only allowlisted, non-identity keys survive")
+			assert.Zero(t, dp.Exemplars().Len(), "exemplars, and their filtered attributes, are dropped")
+			assert.Empty(t, got.metric.Metadata().AsRaw(), "the metric's metadata is cleared")
+			assert.Empty(t, got.scope, "the scope's attributes are cleared")
 			assert.Empty(t, metricArrivals(metrics, svc, "app.unregistered"), "an unregistered metric reached the sink")
 			assert.Eventually(t, func() bool { return filtered()-before == 1 }, eventually, 50*time.Millisecond, "the name drop was not counted")
 			assert.Empty(t, traces.Received().Metrics, "metrics followed the base upstream, not the METRICS override")
@@ -271,6 +293,22 @@ func TestMetricsEmptyAllowlists(t *testing.T) {
 	}
 }
 
+// TestMetricsNoKeys strips every datapoint key when
+// ALLOWED_METRIC_ATTRIBUTE_KEYS is empty, while the datapoint arrives.
+func TestMetricsNoKeys(t *testing.T) {
+	t.Parallel()
+	sink := harness.NewSink(t)
+	env := startShippedWith(t, sink, map[string]string{"ALLOWED_METRIC_NAMES": `app\.requests`}, nil)
+	for _, p := range protocols {
+		svc := "metrics-nokeys-" + p.String()
+		sendMetrics(t, env.clients, p, metricsRequest(svc, nil,
+			metricSpec{name: "app.requests", kind: kindDeltaSum, value: 1, attrs: map[string]any{"route": "/a", "status": "200"}, start: time.Now().Add(-time.Second), at: time.Now()},
+		))
+		dp := awaitMetric(t, sink, svc, "app.requests", 1)[0].metric.Sum().DataPoints().At(0)
+		assert.Empty(t, dp.Attributes().AsRaw(), "an empty allowlist strips every key")
+	}
+}
+
 // TestMetricsStreamCap admits MAX_METRIC_STREAMS streams, drops and counts
 // the next, and admits a new one once a stream is forgotten after
 // DELTA_MAX_STALE.
@@ -313,7 +351,10 @@ func TestMetricsStreamCap(t *testing.T) {
 
 	// Once the streams are stale, a new stream fits. deltatocumulative
 	// sweeps stale streams once a minute (v0.161.0), so this takes up to
-	// DELTA_MAX_STALE plus a minute; keep offering the stream until then.
+	// DELTA_MAX_STALE plus a minute; keep offering the stream until then. A
+	// loop rather than require.Eventually: each pass asserts its export's
+	// answer, which a condition function must not do off the test goroutine;
+	// the ticker paces the offers, it is not a sleep standing in for a wait.
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	for deadline := time.Now().Add(90 * time.Second); !routes()["/later"]; <-tick.C {

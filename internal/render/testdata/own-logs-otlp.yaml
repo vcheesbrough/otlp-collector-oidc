@@ -90,6 +90,9 @@ processors:
     metric_statements:
       - "keep_keys(resource.attributes, [\"service.name\", \"service.version\"])"
       - "keep_keys(datapoint.attributes, [])"
+      - "keep_keys(scope.attributes, [])"
+      - "keep_keys(metric.metadata, [])"
+      - "set(datapoint.exemplars, nil)"
   deltatocumulative:
     max_streams: 2000
     max_stale: "10m0s"

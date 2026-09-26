@@ -99,6 +99,9 @@ processors:
     metric_statements:
       - {{ q metricResource }}
       - {{ q (metricKeepKeys .Metrics.AllowedAttributeKeys .Identity.ClaimAttributes) }}
+{{- range metricStrip }}
+      - {{ q . }}
+{{- end }}
 {{- with .Identity.ClientResourceAttrs }}
   # The deployment's static attributes, and nothing else, onto the reduced
   # resource.
