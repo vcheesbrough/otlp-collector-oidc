@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.uber.org/zap"
@@ -17,8 +18,14 @@ type UpstreamSettings struct {
 	bySignal map[upstream.Signal]upstream.ExporterConfig
 }
 
+// pipelineSignals is the signals the template gives a pipeline, and so the
+// only ones whose upstream is resolved. The metrics pipeline adds metrics.
+func pipelineSignals() []upstream.Signal {
+	return []upstream.Signal{upstream.SignalTraces, upstream.SignalLogs}
+}
+
 func (u *UpstreamSettings) resolve(lookup Lookup) error {
-	resolved, err := upstream.Resolve(lookup)
+	resolved, err := upstream.Resolve(lookup, pipelineSignals()...)
 	if err != nil {
 		// Each fault already names its variable, as the other groups' do.
 		return err
@@ -54,25 +61,14 @@ type Endpoint struct {
 	Value string
 }
 
-// Exporters is the exporters that serve the named signals, in signal order:
-// one per distinct configuration. An exporter no named signal uses is not
-// rendered, so a signal with no pipeline adds nothing.
-func (u UpstreamSettings) Exporters(signals ...string) ([]Exporter, error) {
-	wanted := map[upstream.Signal]bool{}
-	for _, name := range signals {
-		sig, err := upstream.ParseSignal(name)
-		if err != nil {
-			return nil, err
-		}
-		wanted[sig] = true
-	}
+// Exporters is one exporter per distinct configuration among the resolved
+// signals, in signal order.
+func (u UpstreamSettings) Exporters() []Exporter {
 	var out []Exporter
 	for _, e := range u.all() {
-		if e.serves(wanted) {
-			out = append(out, e.Exporter)
-		}
+		out = append(out, e.Exporter)
 	}
-	return out, nil
+	return out
 }
 
 // ExporterFor is the id of the exporter the named signal's pipeline uses.
@@ -82,7 +78,7 @@ func (u UpstreamSettings) ExporterFor(signal string) (string, error) {
 		return "", err
 	}
 	for _, e := range u.all() {
-		if e.serves(map[upstream.Signal]bool{sig: true}) {
+		if slices.Contains(e.signals, sig) {
 			return e.ID, nil
 		}
 	}
@@ -95,18 +91,9 @@ type exporter struct {
 	signals []upstream.Signal
 }
 
-func (e exporter) serves(wanted map[upstream.Signal]bool) bool {
-	for _, sig := range e.signals {
-		if wanted[sig] {
-			return true
-		}
-	}
-	return false
-}
-
-// all groups every signal, wired or not, by its configuration. The id names
-// the signals an exporter serves unless it serves them all, so it does not
-// change when a later card wires another pipeline.
+// all groups the resolved signals by configuration. The id names the signals
+// an exporter serves unless it serves them all, so a deployment that sets no
+// per-signal variable has one plain otlp_grpc or otlp_http.
 func (u UpstreamSettings) all() []exporter {
 	var order []upstream.ExporterConfig
 	bySignals := map[upstream.ExporterConfig][]upstream.Signal{}
@@ -124,7 +111,7 @@ func (u UpstreamSettings) all() []exporter {
 	for _, cfg := range order {
 		sigs := bySignals[cfg]
 		id := componentType(cfg.Protocol)
-		if len(sigs) < len(upstream.Signals()) {
+		if len(sigs) < len(u.bySignal) {
 			names := make([]string, len(sigs))
 			for i, sig := range sigs {
 				names[i] = sig.String()

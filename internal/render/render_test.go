@@ -64,11 +64,13 @@ var shapes = map[string]map[string]string{
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "https://otlp.example.com/otlp/",
 		"OTEL_EXPORTER_OTLP_HEADERS":  "X-Scope-OrgID=tenant-1",
+		// Shorter than the collector's first backoff, which is shortened to it.
+		"UPSTREAM_RETRY_MAX_ELAPSED": "2s",
 	},
 	// Traces to a TLS gRPC upstream with mTLS and every base variable set;
 	// logs to an HTTP endpoint used verbatim, their headers replacing the
 	// base ones; metrics to a third upstream that no pipeline uses yet, so
-	// no exporter is rendered for it.
+	// it is not resolved and nothing is rendered for it.
 	"per-signal": {
 		"OIDC_ISSUER_URL":                       "https://idp.example.com/",
 		"OIDC_AUDIENCE":                         "telemetry",
@@ -95,7 +97,7 @@ var shapes = map[string]map[string]string{
 		"REQUIRED_SCOPE":              "$${x}$",
 		"REQUIRED_CLAIMS":             "sub,'quoted',#hash",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317",
-		"OTEL_EXPORTER_OTLP_HEADERS":  "x-a=%22%24%7Benv%3AHOME%7D%0Aexporters%3A%20%7B%7D",
+		"OTEL_EXPORTER_OTLP_HEADERS":  "x-a=%22%24%7Benv%3AHOME%7D%20%23%20exporters%3A%20%7B%7D",
 	},
 }
 

@@ -109,6 +109,14 @@ func TestRefusesToStart(t *testing.T) {
 		}
 		return env
 	}
+	// withEach is base with each key, value pair of kv set.
+	withEach := func(kv ...string) map[string]string {
+		env := maps.Clone(base)
+		for i := 0; i+1 < len(kv); i += 2 {
+			env[kv[i]] = kv[i+1]
+		}
+		return env
+	}
 	// set is base with k set to v, even to the empty string.
 	set := func(k, v string) map[string]string {
 		env := maps.Clone(base)
@@ -150,6 +158,7 @@ func TestRefusesToStart(t *testing.T) {
 		{name: "bad retry limit", opts: harness.Options{Env: with("UPSTREAM_RETRY_MAX_ELAPSED", "-1s")}, wantText: `invalid UPSTREAM_RETRY_MAX_ELAPSED "-1s": must be a duration`},
 		{name: "headers without a value", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_HEADERS", "x-ok=1,Authorization: Bearer hunter2")}, wantText: "invalid OTEL_EXPORTER_OTLP_HEADERS: pair 2 is not key=value", absentText: "hunter2"}, // #nosec G101 -- made up, to prove it is never printed
 		{name: "per-signal gRPC upstream with a path", opts: harness.Options{Env: set("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "https://gw.example.com:4317/v1/traces")}, wantText: "invalid OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", alsoText: "must be scheme://host:port only"},
+		{name: "header value with a newline", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_HEADERS", "authorization=Bearer%20hunter2%0A")}, wantText: "invalid OTEL_EXPORTER_OTLP_HEADERS: pair 1 has a value with a control or non-ASCII character", absentText: "hunter2"}, // #nosec G101 -- made up, to prove it is never printed
 		{name: "http upstream with credentials", opts: harness.Options{Env: map[string]string{
 			"OIDC_ISSUER_URL":             "http://127.0.0.1:1",
 			"OIDC_AUDIENCE":               harness.Audience,
@@ -160,13 +169,8 @@ func TestRefusesToStart(t *testing.T) {
 		{name: "client certificate without its key", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE", "/run/client.pem")}, wantText: "OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE and OTEL_EXPORTER_OTLP_CLIENT_KEY must be set together"},
 		{name: "CA for a plaintext upstream", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_CERTIFICATE", "/run/ca.pem")}, wantText: "OTEL_EXPORTER_OTLP_CERTIFICATE is set, but every upstream is plaintext"},
 		{name: "per-signal CA for a plaintext signal", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE", "/run/ca.pem")}, wantText: "OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE is set, but the logs upstream is plaintext"},
-		{name: "insecure over https with http/protobuf", opts: harness.Options{Env: map[string]string{
-			"OIDC_ISSUER_URL":             "http://127.0.0.1:1",
-			"OIDC_AUDIENCE":               harness.Audience,
-			"OTEL_EXPORTER_OTLP_ENDPOINT": "https://gw.example.com",
-			"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
-			"OTEL_EXPORTER_OTLP_INSECURE": "true",
-		}}, wantText: "OTEL_EXPORTER_OTLP_INSECURE=true applies to grpc only"},
+		{name: "per-signal insecure over https with http/protobuf", opts: harness.Options{Env: withEach("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf", "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "https://loki.example.com/otlp/v1/logs", "OTEL_EXPORTER_OTLP_LOGS_INSECURE", "true")}, wantText: "OTEL_EXPORTER_OTLP_LOGS_INSECURE=true applies to grpc only"},
+		{name: "insecure with no grpc upstream", opts: harness.Options{Env: withEach("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf", "OTEL_EXPORTER_OTLP_INSECURE", "true")}, wantText: "OTEL_EXPORTER_OTLP_INSECURE=true, but no upstream uses grpc"},
 		{name: "bad log level", opts: harness.Options{Env: with("LOG_LEVEL", "verbose")}, wantText: `invalid LOG_LEVEL "verbose": must be debug, info, warn or error`},
 		{name: "bad log format", opts: harness.Options{Env: with("LOG_FORMAT", "text")}, wantText: `invalid LOG_FORMAT "text": must be json or console`},
 		// Faults in different groups are reported together.

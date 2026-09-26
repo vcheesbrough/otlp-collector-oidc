@@ -9,18 +9,25 @@ import (
 	"time"
 )
 
-// Resolve is every signal's exporter configuration from the environment
-// lookup reads. It reports every missing, malformed or conflicting variable,
-// each once, not just the first.
-func Resolve(lookup func(name string) (string, bool)) (map[Signal]ExporterConfig, error) {
+// Resolve is the exporter configuration of each of signals, the ones that
+// have a pipeline, from the environment lookup reads. Another signal's
+// variables are not read: they could not change what is exported. It reports
+// every missing, malformed or conflicting variable, each once, not just the
+// first.
+func Resolve(lookup func(name string) (string, bool), signals ...Signal) (map[Signal]ExporterConfig, error) {
 	r := resolver{lookup: lookup, seen: map[string]bool{}}
-	out := make(map[Signal]ExporterConfig, len(Signals()))
-	for _, sig := range Signals() {
+	out := make(map[Signal]ExporterConfig, len(signals))
+	for _, sig := range signals {
 		if cfg, ok := r.signal(sig); ok {
 			out[sig] = cfg
 		}
 	}
-	if len(out) == len(Signals()) && !r.anyTLS {
+	if len(out) == len(signals) && !r.anyGRPC {
+		if raw, ok := lookup(Prefix + suffixInsecure); ok && strings.EqualFold(raw, "true") {
+			r.fail(fmt.Errorf("%s=true, but no upstream uses grpc, the only protocol it applies to", Prefix+suffixInsecure))
+		}
+	}
+	if len(out) == len(signals) && !r.anyTLS {
 		for _, s := range settings() {
 			if !s.tlsFile {
 				continue
@@ -44,6 +51,7 @@ type resolver struct {
 	seen    map[string]bool
 	faulted bool // the signal being resolved has a fault, reported or repeated
 	anyTLS  bool // some signal resolved to a TLS upstream
+	anyGRPC bool // some signal resolved to a gRPC upstream
 }
 
 func (r *resolver) fail(err error) {
@@ -133,10 +141,8 @@ func (r *resolver) signal(sig Signal) (ExporterConfig, bool) {
 	if cfg.RetryMaxElapsed, err = time.ParseDuration(retry.raw); err != nil || cfg.RetryMaxElapsed < 0 {
 		r.invalid(retry, errors.New("must be a duration such as 60s, or 0s for no limit"))
 	}
-	cfg.RetryMaxInterval = defaultRetryMaxInterval
-	if cfg.RetryMaxElapsed > 0 && cfg.RetryMaxElapsed < cfg.RetryMaxInterval {
-		cfg.RetryMaxInterval = cfg.RetryMaxElapsed
-	}
+	cfg.RetryInitialInterval = capped(defaultRetryInitialInterval, cfg.RetryMaxElapsed)
+	cfg.RetryMaxInterval = capped(defaultRetryMaxInterval, cfg.RetryMaxElapsed)
 
 	// Rules across variables, once each has parsed.
 	if r.faulted {
@@ -145,8 +151,11 @@ func (r *resolver) signal(sig Signal) (ExporterConfig, bool) {
 	switch cfg.Protocol {
 	case ProtocolGRPC:
 		cfg.Plaintext = cfg.Plaintext || forcePlaintext
+		r.anyGRPC = true
 	case ProtocolHTTPProtobuf:
-		if forcePlaintext && !cfg.Plaintext {
+		// As the SDK has it, INSECURE does not apply to HTTP, so an inherited
+		// base value is for the gRPC signals; the signal's own is a mistake.
+		if forcePlaintext && !cfg.Plaintext && insecure.perSignal {
 			r.fail(fmt.Errorf("%s=true applies to grpc only: for plaintext http/protobuf, make %s an http:// URL", insecure.name, endpoint.name))
 		}
 	}
@@ -199,6 +208,14 @@ func (c *ExporterConfig) setEndpoint(raw string, perSignal bool) error {
 		c.SignalPath = !perSignal
 	}
 	return nil
+}
+
+// capped is d, or limit when that is shorter; a zero limit is no limit.
+func capped(d, limit time.Duration) time.Duration {
+	if limit > 0 && limit < d {
+		return limit
+	}
+	return d
 }
 
 // parseBool accepts the SDK's spelling of a boolean, in any case.

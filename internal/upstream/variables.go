@@ -51,7 +51,7 @@ const (
 // so a variable is described once. In the doc text, 'x' is set as code.
 func settings() []setting {
 	return []setting{
-		{suffix: suffixEndpoint, perSignal: true, required: true, doc: "Upstream URL. 'http://' is plaintext, 'https://' is TLS verified against the system roots (or 'SSL_CERT_FILE'). With 'grpc' it is 'scheme://host:port' only; with 'http/protobuf' the base endpoint gets '/v1/<signal>' appended and a per-signal one is used verbatim. Not needed when all three per-signal endpoints are set"},
+		{suffix: suffixEndpoint, perSignal: true, required: true, doc: "Upstream URL. 'http://' is plaintext, 'https://' is TLS verified against the system roots (or 'SSL_CERT_FILE'). With 'grpc' it is 'scheme://host:port' only; with 'http/protobuf' the base endpoint gets '/v1/<signal>' appended and a per-signal one is used verbatim. Not needed when every signal with a pipeline has its own"},
 		{suffix: suffixProtocol, perSignal: true, def: string(ProtocolGRPC), doc: "'grpc' or 'http/protobuf'; selects the exporter component"},
 		{suffix: suffixHeaders, perSignal: true, secret: true, doc: "'key=value,key2=value2' sent on every export, values percent-decoded: a tenant id, a hosted backend's token. Never logged"},
 		{suffix: suffixTimeout, perSignal: true, def: "10000", doc: "Export timeout in milliseconds"},
@@ -59,10 +59,10 @@ func settings() []setting {
 		{suffix: suffixCertificate, perSignal: true, tlsFile: true, doc: "CA file that alone verifies the upstream's certificate, in place of the system roots"},
 		{suffix: suffixClientCertificate, perSignal: true, tlsFile: true, doc: "Client certificate (PEM) for mTLS to the upstream; set together with 'OTEL_EXPORTER_OTLP_CLIENT_KEY'"},
 		{suffix: suffixClientKey, perSignal: true, tlsFile: true, doc: "Its private key (PEM)"},
-		{suffix: suffixInsecure, perSignal: true, def: "false", doc: "'true' for plaintext gRPC whatever the scheme; with 'http/protobuf' use an 'http://' URL instead"},
+		{suffix: suffixInsecure, perSignal: true, def: "false", doc: "'true' for plaintext gRPC whatever the scheme. It does not apply to 'http/protobuf', where the scheme alone decides: a base value is ignored there, a per-signal one refused"},
 		{suffix: nameSkipVerify, def: "false", doc: "'true' accepts an upstream certificate that does not verify. No SDK equivalent; applies to every TLS upstream"},
 		{suffix: nameQueueSize, def: "1000", doc: "Export requests held per exporter and pipeline while the upstream is unreachable; beyond it they are dropped and counted. No SDK equivalent"},
-		{suffix: nameRetryMaxElapsed, def: "60s", doc: "How long a failing export is retried before it is dropped and counted; '0s' retries forever. No SDK equivalent"},
+		{suffix: nameRetryMaxElapsed, def: "60s", doc: "How long a failing export is retried before it is dropped and counted; '0s' retries forever. The backoff (first 5s, at most 30s) is shortened to it. No SDK equivalent"},
 	}
 }
 

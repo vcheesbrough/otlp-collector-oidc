@@ -35,8 +35,9 @@ exporters:
       queue_size: 1000
     retry_on_failure:
       enabled: true
-      max_elapsed_time: "1m0s"
-      max_interval: "30s"
+      initial_interval: "2s"
+      max_elapsed_time: "2s"
+      max_interval: "2s"
 
 extensions:
   health_check:

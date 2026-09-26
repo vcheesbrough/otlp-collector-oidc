@@ -77,7 +77,8 @@ func TestUpstreamPerSignal(t *testing.T) {
 
 // TestUpstreamHTTP sends every signal to one HTTP upstream over TLS, trusted
 // through OTEL_EXPORTER_OTLP_CERTIFICATE alone: the base endpoint's path is
-// kept and /v1/<signal> appended, and nothing is compressed.
+// kept and /v1/<signal> appended, and nothing is compressed. A retry limit
+// under the collector's first backoff still starts.
 func TestUpstreamHTTP(t *testing.T) {
 	t.Parallel()
 	cert := harness.NewCertificate(t)
@@ -88,6 +89,8 @@ func TestUpstreamHTTP(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_ENDPOINT":    sink.Endpoint() + "/otlp",
 		"OTEL_EXPORTER_OTLP_CERTIFICATE": cert.CertFile,
 		"OTEL_EXPORTER_OTLP_COMPRESSION": "none",
+		// Below the collector's first backoff, which is shortened to it.
+		"UPSTREAM_RETRY_MAX_ELAPSED": "2s",
 	}, nil)
 	deliver(t, env, "http", sink, sink)
 
@@ -102,7 +105,8 @@ func TestUpstreamHTTP(t *testing.T) {
 // TestUpstreamTLSVariables covers the remaining TLS knobs in one process:
 // traces go over mTLS to an upstream that requires a client certificate,
 // and logs, through LOGS_INSECURE, in plaintext to an https:// endpoint. The
-// base endpoint is unset: with every signal's own set, it is not required.
+// base endpoint is unset: with the traces and logs endpoints set, it is not
+// required, since metrics has no pipeline to need one.
 func TestUpstreamTLSVariables(t *testing.T) {
 	t.Parallel()
 	server, client := harness.NewCertificate(t), harness.NewCertificate(t)
@@ -114,11 +118,28 @@ func TestUpstreamTLSVariables(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_CLIENT_KEY":         client.KeyFile,
 		"OTEL_EXPORTER_OTLP_ENDPOINT":           "",
 		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT":    traces.Endpoint(),
-		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT":   "http://127.0.0.1:9",
 		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT":      strings.Replace(logs.Endpoint(), "http://", "https://", 1),
 		"OTEL_EXPORTER_OTLP_LOGS_INSECURE":      "true",
 	}, nil)
 	deliver(t, env, "tls-variables", traces, logs)
+}
+
+// TestUpstreamInheritedInsecure sets OTEL_EXPORTER_OTLP_INSECURE=true for
+// the base: traces over gRPC go plaintext to an https:// endpoint, while logs
+// over http/protobuf, to which it does not apply, still speak TLS.
+func TestUpstreamInheritedInsecure(t *testing.T) {
+	t.Parallel()
+	traces := harness.NewSink(t)
+	cert := harness.NewCertificate(t)
+	logs := harness.NewSinkWith(t, harness.SinkOptions{Transport: harness.TransportHTTP, Cert: &cert})
+	env := startShippedWith(t, traces, map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT":         strings.Replace(traces.Endpoint(), "http://", "https://", 1),
+		"OTEL_EXPORTER_OTLP_INSECURE":         "true",
+		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL":    "http/protobuf",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT":    logs.Endpoint() + "/v1/logs",
+		"OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE": cert.CertFile,
+	}, nil)
+	deliver(t, env, "inherited-insecure", traces, logs)
 }
 
 // TestUpstreamSkipVerify trusts nothing about the upstream's certificate and

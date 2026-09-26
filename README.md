@@ -74,7 +74,8 @@ are required: `OIDC_ISSUER_URL`, `OIDC_AUDIENCE` and `OTEL_EXPORTER_OTLP_ENDPOIN
 or a value that does not parse stops the process before it listens, and the error
 names the variable and the value — except a header's, which is never printed.
 
-The upstream follows the SDK's semantics: `grpc` or `http/protobuf`, headers, timeout
+The upstream follows the SDK's semantics, with one deviation recorded in the
+[design](docs/DESIGN.md#62-reference): `grpc` or `http/protobuf`, headers, timeout
 in milliseconds, compression, a CA and a client certificate for mTLS, each with
 `_TRACES_`, `_LOGS_` and `_METRICS_` forms that take precedence for that signal.
 Signals that resolve to the same upstream share one exporter.

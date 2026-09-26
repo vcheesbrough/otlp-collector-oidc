@@ -35,14 +35,18 @@ type ExporterConfig struct {
 	Compression     Compression
 	QueueSize       int64
 	RetryMaxElapsed time.Duration
-	// RetryMaxInterval caps the backoff between retries: the collector's
-	// 30s, or RetryMaxElapsed when that is shorter, which the collector
-	// requires.
-	RetryMaxInterval time.Duration
+	// RetryInitialInterval and RetryMaxInterval are the first backoff and
+	// the cap on it: the collector's 5s and 30s, each shortened to
+	// RetryMaxElapsed when that is shorter, which the collector requires.
+	RetryInitialInterval time.Duration
+	RetryMaxInterval     time.Duration
 }
 
-// defaultRetryMaxInterval is the collector's own cap on the retry backoff.
-const defaultRetryMaxInterval = 30 * time.Second
+// The collector's own retry backoff.
+const (
+	defaultRetryInitialInterval = 5 * time.Second
+	defaultRetryMaxInterval     = 30 * time.Second
+)
 
 // String describes the configuration for a log line, with no secret in it:
 // headers are named, never valued.
@@ -138,6 +142,8 @@ func parseHeaders(raw string) (Headers, error) {
 			return "", pairError(n, "has a malformed percent-encoding")
 		case !validHeaderName(name):
 			return "", pairError(n, "has a name that is not an HTTP header token")
+		case !validHeaderValue(value):
+			return "", pairError(n, "has a value with a control or non-ASCII character")
 		}
 		if i, seen := byName[strings.ToLower(name)]; seen {
 			pairs[i] = Header{Name: name, Value: value}
@@ -147,6 +153,18 @@ func parseHeaders(raw string) (Headers, error) {
 		pairs = append(pairs, Header{Name: name, Value: value})
 	}
 	return newHeaders(pairs), nil
+}
+
+// validHeaderValue is visible ASCII, space and tab: RFC 9110's field value
+// without obs-text, which gRPC metadata refuses. Anything else would pass
+// startup and fail every export.
+func validHeaderValue(value string) bool {
+	for i := range len(value) {
+		if c := value[i]; (c < 0x20 && c != '\t') || c > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func pairError(n int, what string) error {

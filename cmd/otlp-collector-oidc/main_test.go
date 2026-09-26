@@ -71,5 +71,5 @@ func TestHostileValuesArriveLiterally(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, exp.ClientConfig.Headers, 1)
 	assert.Equal(t, "x-a", exp.ClientConfig.Headers[0].Name)
-	assert.Equal(t, configopaque.String("\"${env:HOME}\nexporters: {}"), exp.ClientConfig.Headers[0].Value)
+	assert.Equal(t, configopaque.String("\"${env:HOME} # exporters: {}"), exp.ClientConfig.Headers[0].Value)
 }
