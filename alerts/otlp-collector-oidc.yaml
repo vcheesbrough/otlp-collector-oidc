@@ -1,0 +1,77 @@
+# Prometheus alerting rules for the collector's own metrics, scraped from
+# :8888. Shipped with github.com/vcheesbrough/otlp-collector-oidc; load them
+# into Prometheus, Mimir or Grafana alerting. Each names its runbook entry.
+#
+# Every rule joins target_info on (job, instance) for the environment, so an
+# alert carries deployment_environment_name. The service name is the default;
+# change service_name="otlp-collector-oidc" if OTEL_SERVICE_NAME is set.
+groups:
+  - name: otlp-collector-oidc
+    rules:
+      # Absence stands in for up: an environment that reported within the
+      # last day and does not now is gone, whether the process died or its
+      # scrape broke. It keeps firing for a day of outage, and covers an
+      # environment from its first scrape.
+      - alert: OTLPCollectorOIDCAbsent
+        expr: |
+          count by (deployment_environment_name) (max_over_time(target_info{service_name="otlp-collector-oidc"}[1d]))
+          unless
+          count by (deployment_environment_name) (target_info{service_name="otlp-collector-oidc"})
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "otlp-collector-oidc in {{ $labels.deployment_environment_name }} has stopped reporting"
+          runbook_url: https://github.com/vcheesbrough/otlp-collector-oidc/blob/main/docs/runbook.md#otlpcollectoroidcabsent
+
+      # Clients are being told the collector is not ready: the provider's
+      # discovery or keys have not loaded. Every client export is refused.
+      - alert: OTLPCollectorOIDCNotReady
+        expr: |
+          sum by (deployment_environment_name) (
+            rate(otelcol_oidcclientauth_rejections{reason="not_ready"}[5m])
+            * on (job, instance) group_left(deployment_environment_name) target_info{service_name="otlp-collector-oidc"}
+          ) > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "otlp-collector-oidc in {{ $labels.deployment_environment_name }} answers not ready: the OIDC provider is unreachable"
+          runbook_url: https://github.com/vcheesbrough/otlp-collector-oidc/blob/main/docs/runbook.md#otlpcollectoroidcnotready
+
+      # Tokens are being refused for a claim or for validity at a rate no
+      # misconfigured single client explains: the provider changed.
+      - alert: OTLPCollectorOIDCTokensRefused
+        expr: |
+          sum by (deployment_environment_name, reason) (
+            rate(otelcol_oidcclientauth_rejections{reason=~"invalid_token|missing_claim|missing_scope"}[10m])
+            * on (job, instance) group_left(deployment_environment_name) target_info{service_name="otlp-collector-oidc"}
+          ) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "otlp-collector-oidc in {{ $labels.deployment_environment_name }} refuses tokens: {{ $labels.reason }}"
+          runbook_url: https://github.com/vcheesbrough/otlp-collector-oidc/blob/main/docs/runbook.md#otlpcollectoroidctokensrefused
+
+      # Telemetry is being lost on the way upstream: given up after retries,
+      # or refused with the queue full. rate() drops the names, so the four
+      # have the same labels and "or" keeps the first; each is filtered to
+      # the non-zero ones first, so a later kind of loss is not masked.
+      - alert: OTLPCollectorOIDCExportDropped
+        expr: |
+          sum by (deployment_environment_name, exporter) (
+            (
+              rate(otelcol_exporter_send_failed_spans[5m]) > 0
+              or rate(otelcol_exporter_send_failed_log_records[5m]) > 0
+              or rate(otelcol_exporter_enqueue_failed_spans[5m]) > 0
+              or rate(otelcol_exporter_enqueue_failed_log_records[5m]) > 0
+            )
+            * on (job, instance) group_left(deployment_environment_name) target_info{service_name="otlp-collector-oidc"}
+          ) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "otlp-collector-oidc in {{ $labels.deployment_environment_name }} is dropping data at {{ $labels.exporter }}"
+          runbook_url: https://github.com/vcheesbrough/otlp-collector-oidc/blob/main/docs/runbook.md#otlpcollectoroidcexportdropped

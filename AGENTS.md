@@ -111,7 +111,9 @@ A card's PR is ready to merge only when all of these hold, and the self-review c
 each: every behaviour the card adds has integration scenarios over both protocols;
 the README section it touches is updated in place; `docs/configuration.md` is
 regenerated (`make docs`) if a variable changed, which `make docs-check` enforces; the observability decision is recorded
-on the card, naming the panel, alert and runbook entry added or "none" with a reason;
+on the card, naming the dashboard panel, alert rule and runbook entry added (in
+`dashboards/`, `alerts/`, `docs/runbook.md`) or "none" with a reason, and a new metric
+the artefacts query is created in `TestArtefactMetrics`' shape;
 the card's SOLID section is honoured or the deviation is written on the card;
 DESIGN.md is updated where behaviour or a §10 finding changed; CI is green and the
 badges on `main` will stay green; the card body matches what was built.
@@ -204,7 +206,10 @@ resolves the upstream from the standard `OTEL_EXPORTER_OTLP_*` variables per sig
 (`internal/upstream`), gRPC or HTTP, with headers, mTLS, queue and retry. Iteration 5
 (`0.5.0`) sends the process's own logs to the logs upstream as OTLP
 (`internal/render/selftelemetry.go`, `LOG_OUTPUT`, `OTEL_SERVICE_NAME`,
-`OTEL_RESOURCE_ATTRIBUTES`); the dashboard is the next card.
+`OTEL_RESOURCE_ATTRIBUTES`). Iteration 6 (`0.6.0`) ships the dashboard
+(`dashboards/`), the alert rules (`alerts/`) and `docs/runbook.md`; every card that
+adds a metric adds its panel, and where warranted its alert and runbook entry, in the
+same PR, and `TestArtefactMetrics` proves every name they query is exported.
 
 **Deviations from the `observability` skill §2, by design (DESIGN §3.4):** the
 product's own metrics are a Prometheus pull on `:8888`, not an OTLP push — it is a

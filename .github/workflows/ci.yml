@@ -59,6 +59,9 @@ jobs:
       - name: Release planning (scripts/release-plan.sh)
         if: ${{ !cancelled() }}
         run: scripts/release-plan_test.sh
+      - name: Alert rules (promtool check and unit tests)
+        if: ${{ !cancelled() }}
+        run: make alerts-check
 
   test:
     name: Test
