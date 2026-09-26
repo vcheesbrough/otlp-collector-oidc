@@ -40,7 +40,7 @@ standard Go way: mount the CA and set `SSL_CERT_FILE` or `SSL_CERT_DIR`.
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` | *(empty)* | Client certificate (PEM) for mTLS to the upstream; set together with `OTEL_EXPORTER_OTLP_CLIENT_KEY` |
 | `OTEL_EXPORTER_OTLP_CLIENT_KEY` | *(empty)* | Its private key (PEM) |
 | `OTEL_EXPORTER_OTLP_INSECURE` | `false` | `true` for plaintext gRPC whatever the scheme. It does not apply to `http/protobuf`, where the scheme alone decides: a base value is ignored there, a per-signal one refused |
-| `UPSTREAM_TLS_INSECURE_SKIP_VERIFY` | `false` | `true` accepts an upstream certificate that does not verify. No SDK equivalent; applies to every TLS upstream |
+| `UPSTREAM_TLS_INSECURE_SKIP_VERIFY` | `false` | `true` accepts an upstream certificate that does not verify. No SDK equivalent; applies to every TLS upstream, except that the process's own logs always verify, so with a TLS logs upstream it needs `LOG_OUTPUT=stdout` |
 | `UPSTREAM_QUEUE_SIZE` | `1000` | Export requests held per exporter and pipeline while the upstream is unreachable; beyond it they are dropped and counted. No SDK equivalent |
 | `UPSTREAM_RETRY_MAX_ELAPSED` | `60s` | How long a failing export is retried before it is dropped and counted; `0s` retries forever. The backoff (first 5s, at most 30s) is shortened to it. No SDK equivalent |
 
@@ -78,6 +78,14 @@ Every `OTEL_EXPORTER_OTLP_*` variable above also has `OTEL_EXPORTER_OTLP_TRACES_
 | --- | --- | --- |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`; at `debug` the rendered configuration is logged |
 | `LOG_FORMAT` | `json` | Stdout encoding, `json` or `console` |
+
+## Own telemetry
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LOG_OUTPUT` | `both` | `both`, `otlp` or `stdout`. Own logs go to the logs upstream as OTLP unless `stdout`; stdout keeps a copy unless `otlp`. On a platform that also ships container stdout to the same store, pick one |
+| `OTEL_SERVICE_NAME` | *(empty)* | This process's own `service.name` on its logs and metrics. Unset, the `service.name` in `OTEL_RESOURCE_ATTRIBUTES` is used, else `otlp-collector-oidc` |
+| `OTEL_RESOURCE_ATTRIBUTES` | *(empty)* | `key=value,...`, values percent-decoded: this process's own resource attributes, on its logs and metrics. `service.version` is the build's and is ignored with a warning. Not what is stamped on client data |
 
 ## Replacing the pipeline
 

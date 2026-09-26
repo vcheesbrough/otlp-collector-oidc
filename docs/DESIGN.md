@@ -113,6 +113,17 @@ delays startup or a request — and stdout keeps its copy so `docker logs` works
 upstream is the thing that is down. Its own metrics stay a Prometheus pull; it emits
 no traces of its own.
 
+As built: the collector's telemetry SDK exports through a `batch` processor under
+`service::telemetry::logs::processors`, rendered from the logs signal's resolved
+upstream (§6.2): for gRPC a URL whose scheme carries the TLS decision, for HTTP the
+full path, which the SDK uses as given. The SDK's exporter has its own bounded queue
+and no retry, and it always verifies TLS, so `UPSTREAM_TLS_INSECURE_SKIP_VERIFY` with
+own logs upstream is refused at startup. The run command's own lines, written before
+the collector exists, go through an SDK built from the same processors and resource,
+so they arrive identically. One `service.instance.id` is chosen per process and set on
+both, and on `target_info` at `:8888`. A final flush that cannot reach the upstream at
+shutdown is a warning, not a failed exit.
+
 ## 4. The two custom components
 
 ### 4.1 `otlpsingleport` — the receiver
@@ -515,6 +526,19 @@ suite, so a version bump re-proves them):
   HTTP alike — carries the auth data the interceptor set: grpc-go's handler transport
   derives the stream context from the request's (a receiver unit test until the
   pipeline reads the auth context).
+- The collector supports an OTLP exporter under `service::telemetry::logs::processors`
+  (file format 0.3). Its export failures go to the SDK's error handler, which the
+  collector points at its stdout-only logger, built before the OTLP tee: they never
+  re-enter the export. An unreachable upstream delays neither startup nor a request;
+  it does fail the collector's shutdown flush, which the run command reports as a
+  warning.
+- The SDK's OTLP log exporter reads `OTEL_EXPORTER_OTLP_*` from the environment as
+  defaults beneath its configuration (a base CA turned a plaintext `LOGS` override
+  into TLS). The run command therefore unsets every variable it has interpreted —
+  the upstream family, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` — once the
+  configuration is rendered, so nothing reads them twice; a mounted configuration
+  keeps them for its `${env:...}`. With no trace processors, the collector emits no
+  self-traces and reads no trace exporter variables.
 
 **Open:**
 
@@ -522,12 +546,6 @@ suite, so a version bump re-proves them):
   (needed for optional claims); otherwise export empty defaults and delete them in
   `transform`.
 - OTTL `Now() + Duration(...)` arithmetic in the pinned version.
-- The pinned collector supports an OTLP exporter under
-  `service::telemetry::logs::processors`; its failures go to the SDK error handler,
-  not back into the log pipeline; an unreachable upstream at startup delays nothing.
-- The renderer sets `service::telemetry::resource` explicitly; confirm the collector
-  does not also read `OTEL_RESOURCE_ATTRIBUTES` and double it, and that
-  `OTEL_EXPORTER_OTLP_*` is not picked up for self-traces.
 - `deltatocumulative` covers histograms and exponential histograms, not only sums.
 - authentik: a provider without `signing_key` issues a non-RS or opaque token; `scope`
   on the access token is space-delimited; `hashed_user_id` `sub` is stable across

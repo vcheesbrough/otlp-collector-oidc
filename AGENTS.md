@@ -152,8 +152,9 @@ rendered from the environment by `run`). One Go module.
 - **Interfaces and dependencies.** Define interfaces where they are consumed, keep
   them small, accept interfaces and return concrete types; assert compliance at
   compile time (`var _ extensionauth.Server = (*authenticator)(nil)`); inject clocks,
-  HTTP clients and key sets; no package-level mutable state (the one exception is the
-  linker-set version in `internal/build`); no `init()`.
+  HTTP clients and key sets; no package-level mutable state (the exceptions: the
+  linker-set version in `internal/build`, and in test code the integration harness's
+  set of ports it has handed out, which every parallel test must share); no `init()`.
 - **Concurrency.** Every goroutine has an owner and an exit path (`context`,
   `errgroup`, or a server's `Stop`), never fire-and-forget; mutexes are value fields
   next to what they guard; `context.Context` is the first parameter wherever work can
@@ -200,5 +201,14 @@ access token (`extension/oidcclientauth`, `docs/token-profile.md`) and adds a fa
 issuer to the harness. Iteration 3 (`0.3.0`) renders the configuration from the
 environment (`internal/render`, `run`, `docs/configuration.md`). Iteration 4 (`0.4.0`)
 resolves the upstream from the standard `OTEL_EXPORTER_OTLP_*` variables per signal
-(`internal/upstream`), gRPC or HTTP, with headers, mTLS, queue and retry; the
-collector's own logs upstream are the next card.
+(`internal/upstream`), gRPC or HTTP, with headers, mTLS, queue and retry. Iteration 5
+(`0.5.0`) sends the process's own logs to the logs upstream as OTLP
+(`internal/render/selftelemetry.go`, `LOG_OUTPUT`, `OTEL_SERVICE_NAME`,
+`OTEL_RESOURCE_ATTRIBUTES`); the dashboard is the next card.
+
+**Deviations from the `observability` skill §2, by design (DESIGN §3.4):** the
+product's own metrics are a Prometheus pull on `:8888`, not an OTLP push — it is a
+collector, and `:8888` is the collector's own contract; and it emits no traces of its
+own — the request path is the stock receiver and processors, whose spans would
+describe the collector's internals rather than anything an operator acts on. Its logs
+are the one self-signal it pushes, as OTLP, to the logs upstream.

@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -66,24 +67,33 @@ type Collector struct {
 // and stops it with SIGTERM when the test ends, asserting a clean exit.
 func Start(t *testing.T, b Binary, opts Options) *Collector {
 	t.Helper()
-	c := launch(t, b, opts)
-	t.Cleanup(func() { c.stop(t) })
-
-	require.Eventually(t, func() bool {
+	for attempt := 1; ; attempt++ {
+		c := launch(t, b, opts)
+		require.Eventually(t, func() bool {
+			select {
+			case <-c.exited:
+				return true
+			default:
+			}
+			return c.healthy(t.Context())
+		}, startTimeout, 25*time.Millisecond, "collector never became healthy")
 		select {
 		case <-c.exited:
-			return true
+			// freeAddr releases the ports it finds, so a process started in
+			// parallel can take one first: try again on fresh ports.
+			if attempt < startAttempts && strings.Contains(c.Output(), "address already in use") {
+				continue
+			}
+			require.FailNow(t, "collector exited during start", "exit code %d\n%s", c.exitCode, c.Output())
 		default:
 		}
-		return c.healthy(t.Context())
-	}, startTimeout, 25*time.Millisecond, "collector never became healthy")
-	select {
-	case <-c.exited:
-		require.FailNow(t, "collector exited during start", "exit code %d\n%s", c.exitCode, c.Output())
-	default:
+		t.Cleanup(func() { c.stop(t) })
+		return c
 	}
-	return c
 }
+
+// startAttempts bounds the relaunches after a port race.
+const startAttempts = 3
 
 // Refused is a collector that would not start: its exit code, everything it
 // wrote, and what it wrote to stderr alone.
@@ -179,6 +189,18 @@ func (c *Collector) Output() string {
 	return c.output.String()
 }
 
+// Stderr is what the process has written to stderr alone.
+func (c *Collector) Stderr() string {
+	return c.stderr.String()
+}
+
+// Stop sends SIGTERM now, rather than when the test ends, waits for the exit
+// and asserts it was clean. Stopping twice is harmless.
+func (c *Collector) Stop(t *testing.T) {
+	t.Helper()
+	c.stop(t)
+}
+
 // Stdout is what the process has written to stdout alone: its log lines.
 func (c *Collector) Stdout() string {
 	return c.stdout.String()
@@ -237,15 +259,27 @@ func coverDir(t *testing.T) string {
 	return t.TempDir()
 }
 
-// freeAddr returns a loopback address with a port nothing is listening on.
+// handedOut is every port freeAddr has returned in this test binary. The
+// port is released before the process binds it, and the kernel readily
+// offers a just-released port again, so without this two processes started
+// in parallel could be given the same one. Test-harness state, shared by
+// every parallel test by design.
+var handedOut sync.Map
+
+// freeAddr returns a loopback address with a port nothing is listening on
+// and no other caller in this run has been given.
 func freeAddr(t *testing.T) string {
 	t.Helper()
 	var lc net.ListenConfig
-	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	addr := ln.Addr().String()
-	require.NoError(t, ln.Close())
-	return addr
+	for {
+		ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		addr := ln.Addr().String()
+		require.NoError(t, ln.Close())
+		if _, taken := handedOut.LoadOrStore(addr, true); !taken {
+			return addr
+		}
+	}
 }
 
 func envList(env map[string]string) []string {

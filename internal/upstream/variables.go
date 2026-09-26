@@ -60,7 +60,7 @@ func settings() []setting {
 		{suffix: suffixClientCertificate, perSignal: true, tlsFile: true, doc: "Client certificate (PEM) for mTLS to the upstream; set together with 'OTEL_EXPORTER_OTLP_CLIENT_KEY'"},
 		{suffix: suffixClientKey, perSignal: true, tlsFile: true, doc: "Its private key (PEM)"},
 		{suffix: suffixInsecure, perSignal: true, def: "false", doc: "'true' for plaintext gRPC whatever the scheme. It does not apply to 'http/protobuf', where the scheme alone decides: a base value is ignored there, a per-signal one refused"},
-		{suffix: nameSkipVerify, def: "false", doc: "'true' accepts an upstream certificate that does not verify. No SDK equivalent; applies to every TLS upstream"},
+		{suffix: nameSkipVerify, def: "false", doc: "'true' accepts an upstream certificate that does not verify. No SDK equivalent; applies to every TLS upstream, except that the process's own logs always verify, so with a TLS logs upstream it needs 'LOG_OUTPUT=stdout'"},
 		{suffix: nameQueueSize, def: "1000", doc: "Export requests held per exporter and pipeline while the upstream is unreachable; beyond it they are dropped and counted. No SDK equivalent"},
 		{suffix: nameRetryMaxElapsed, def: "60s", doc: "How long a failing export is retried before it is dropped and counted; '0s' retries forever. The backoff (first 5s, at most 30s) is shortened to it. No SDK equivalent"},
 	}
@@ -72,6 +72,20 @@ func Variables() []Variable {
 	out := make([]Variable, 0, len(settings()))
 	for _, s := range settings() {
 		out = append(out, Variable{Name: s.baseName(), Required: s.required, Default: s.def, Doc: s.doc})
+	}
+	return out
+}
+
+// Names is every variable Resolve may read, per-signal forms included.
+func Names() []string {
+	var out []string
+	for _, s := range settings() {
+		out = append(out, s.baseName())
+		if s.perSignal {
+			for _, sig := range Signals() {
+				out = append(out, s.signalName(sig))
+			}
+		}
 	}
 	return out
 }

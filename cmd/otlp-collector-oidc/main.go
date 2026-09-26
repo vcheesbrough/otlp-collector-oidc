@@ -27,7 +27,7 @@ import (
 func main() {
 	set := settings()
 	cmd := otelcol.NewCommand(set)
-	cmd.AddCommand(render.Command(set, os.LookupEnv, os.TempDir()))
+	cmd.AddCommand(render.Command(set, os.LookupEnv, os.Unsetenv, os.TempDir()))
 	cmd.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "Print the version and exit",
@@ -47,7 +47,7 @@ func main() {
 func settings() otelcol.CollectorSettings {
 	return otelcol.CollectorSettings{
 		BuildInfo: component.BuildInfo{
-			Command:     "otlp-collector-oidc",
+			Command:     build.Command,
 			Description: "OpenTelemetry Collector distribution that authenticates OTLP clients with OIDC",
 			Version:     build.Version(),
 		},
