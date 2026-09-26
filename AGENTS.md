@@ -110,8 +110,7 @@ the standards below; a deviation is recorded on the card, not left silent.
 A card's PR is ready to merge only when all of these hold, and the self-review checks
 each: every behaviour the card adds has integration scenarios over both protocols;
 the README section it touches is updated in place; `docs/configuration.md` is
-regenerated if a variable changed (until the renderer exists, `make docs-check` holds
-the README table to `config/collector.yaml`); the observability decision is recorded
+regenerated (`make docs`) if a variable changed, which `make docs-check` enforces; the observability decision is recorded
 on the card, naming the panel, alert and runbook entry added or "none" with a reason;
 the card's SOLID section is honoured or the deviation is written on the card;
 DESIGN.md is updated where behaviour or a §10 finding changed; CI is green and the
@@ -128,7 +127,8 @@ baseline everyone assumes. CI enforces what a tool can; review enforces the rest
   (environment → config), `internal/upstream` (the `OTEL_EXPORTER_OTLP_*` resolver),
   `internal/build` (version from ldflags), `integration/` (with the harness in
   `integration/harness`), `cmd/otlp-collector-oidc` (our `main` plus ocb's generated
-  `components.go`), `config/collector.yaml` (the shipped pipeline). One Go module.
+  `components.go`), `internal/render/collector.yaml.tmpl` (the shipped pipeline,
+rendered from the environment by `run`). One Go module.
   Package names are short, lower-case, and say what they provide; no `util`,
   `common`, `helpers`. A `doc.go` per package with the package comment.
 - **Collector component conventions.** `factory.go` + `config.go` per component;
@@ -197,4 +197,6 @@ Pre-release. Iteration 1 (`0.1.0`) delivers the module, the single-port receiver
 pipeline for traces and logs, the image, CI with its test report and badges, and the
 integration harness. Iteration 2 (`0.2.0`) authenticates every request with an OIDC
 access token (`extension/oidcclientauth`, `docs/token-profile.md`) and adds a fake
-issuer to the harness; identity stamping is the next card.
+issuer to the harness. Iteration 3 (`0.3.0`) renders the configuration from the
+environment (`internal/render`, `run`, `docs/configuration.md`); the upstream
+`OTEL_EXPORTER_OTLP_*` family is the next card.

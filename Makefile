@@ -12,7 +12,7 @@ BIN     := bin/otlp-collector-oidc
 # Unit packages: everything but the integration tier.
 UNIT    := $(shell $(GO) list ./... | grep -v /integration)
 
-.PHONY: all fmt lint vet vuln test integration build image generate generate-check versions-check docs-check release-plan-test check
+.PHONY: all fmt lint vet vuln test integration build image generate generate-check versions-check docs docs-check release-plan-test check
 
 all: check build
 
@@ -61,9 +61,13 @@ generate-check: generate
 versions-check:
 	scripts/versions-check.sh
 
-## docs-check: every variable the shipped config reads is documented, and nothing else is.
+## docs: regenerate docs/configuration.md and the renderer's golden files from internal/render.
+docs:
+	$(GO) test -count=1 ./internal/render -run 'TestReferenceIsCurrent|TestGolden' -update
+
+## docs-check: the template renders every variable and nothing else, and docs/configuration.md is current.
 docs-check:
-	scripts/docs-check.sh
+	$(GO) test -count=1 ./internal/render -run 'TestTemplateUsesEverySetting|TestReferenceIsCurrent|TestReferenceListsEveryVariable'
 
 ## release-plan-test: the rules that decide what a release publishes.
 release-plan-test:

@@ -1,0 +1,190 @@
+package render
+
+import (
+	"flag"
+	"os"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
+	"testing"
+	"text/template/parse"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// These are the renderer's secondary, fast checks. What each variable does
+// is proven from outside the process by the integration suite; these guard
+// the template and the reference against drift, which nothing outside the
+// process can see until a later behaviour breaks.
+
+var update = flag.Bool("update", false, "rewrite the golden files and docs/configuration.md")
+
+// Shapes are environments whose rendering is pinned in testdata/<name>.yaml.
+// cmd/otlp-collector-oidc loads every one through the collector's own
+// validation.
+var shapes = map[string]map[string]string{
+	// Only what is required: every other value is its default.
+	"minimal": {
+		"OIDC_ISSUER_URL":             "https://idp.example.com/application/o/telemetry/",
+		"OIDC_AUDIENCE":               "telemetry",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317",
+	},
+	// Every variable set to something other than its default.
+	"full": {
+		"OIDC_ISSUER_URL":             "https://idp.example.com/",
+		"OIDC_AUDIENCE":               "aud-1",
+		"OIDC_DISCOVERY_RETRY":        "5s",
+		"OIDC_JWKS_REFRESH":           "1h",
+		"REQUIRED_SCOPE":              "otlp:send",
+		"REQUIRED_CLAIMS":             " sub , email ,",
+		"CLOCK_SKEW":                  "0s",
+		"REJECTION_LOG_INTERVAL":      "10s",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "https://upstream.example.com:4317",
+		"LISTEN_ADDR":                 "127.0.0.1:14318",
+		"TLS_CERT_FILE":               "/run/tls/tls.crt",
+		"TLS_KEY_FILE":                "/run/tls/tls.key",
+		"TLS_RELOAD_INTERVAL":         "10s",
+		"MAX_REQUEST_BODY_BYTES":      "1048576",
+		"CORS_ALLOWED_ORIGINS":        "https://app.example.com,https://*.example.org",
+		"MEMORY_LIMIT_MIB":            "512",
+		"MEMORY_SPIKE_LIMIT_MIB":      "128",
+		"BATCH_TIMEOUT":               "200ms",
+		"HEALTH_ADDR":                 "0.0.0.0:13134",
+		"SELF_METRICS_ADDR":           "127.0.0.1:9888",
+		"LOG_LEVEL":                   "debug",
+		"LOG_FORMAT":                  "console",
+	},
+	// Values that would break naive substitution: quotes, a newline, YAML
+	// syntax and ${...} references must arrive as literal strings.
+	"hostile": {
+		"OIDC_ISSUER_URL":             "https://idp.example.com/?a=${env:HOME}",
+		"OIDC_AUDIENCE":               "a\"b\nexporters: {}",
+		"REQUIRED_SCOPE":              "$${x}$",
+		"REQUIRED_CLAIMS":             "sub,'quoted',#hash",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317",
+	},
+}
+
+func lookupIn(env map[string]string) Lookup {
+	return func(name string) (string, bool) {
+		v, ok := env[name]
+		return v, ok
+	}
+}
+
+func TestGolden(t *testing.T) {
+	for name, env := range shapes {
+		t.Run(name, func(t *testing.T) {
+			var s Settings
+			require.NoError(t, Load(lookupIn(env), &s), "env: %v", env)
+			got, err := Render(s)
+			require.NoError(t, err)
+
+			path := filepath.Join("testdata", name+".yaml")
+			if *update {
+				require.NoError(t, os.WriteFile(path, got, 0o600))
+			}
+			want, err := os.ReadFile(path) // #nosec G304 -- a fixed test file
+			require.NoError(t, err, "run go test ./internal/render -update to create it")
+			assert.Equal(t, string(want), string(got), "env: %v", env)
+		})
+	}
+}
+
+// TestTemplateUsesEverySetting is the drift check between the template and
+// the variables: every variable in Settings is rendered, and the template
+// refers to nothing else.
+func TestTemplateUsesEverySetting(t *testing.T) {
+	tmpl, err := parseTemplate()
+	require.NoError(t, err)
+	var used []string
+	walk(tmpl.Root, func(ident []string) {
+		if len(ident) >= 2 {
+			used = append(used, ident[0]+"."+ident[1])
+		}
+	})
+
+	var declared []string
+	for _, g := range groupsOf(reflect.ValueOf(&Settings{}).Elem()) {
+		for _, v := range g.variables {
+			declared = append(declared, v.path)
+			assert.Contains(t, used, v.path, "%s is declared but the template never renders it", v.name)
+		}
+	}
+	for _, path := range used {
+		assert.Contains(t, declared, path, "the template renders .%s, which is not a variable", path)
+	}
+}
+
+// walk calls fn with the identifiers of every field reference under node.
+func walk(node parse.Node, fn func(ident []string)) {
+	switch n := node.(type) {
+	case *parse.ListNode:
+		if n == nil {
+			return
+		}
+		for _, c := range n.Nodes {
+			walk(c, fn)
+		}
+	case *parse.ActionNode:
+		walk(n.Pipe, fn)
+	case *parse.IfNode:
+		walkBranch(&n.BranchNode, fn)
+	case *parse.WithNode:
+		walkBranch(&n.BranchNode, fn)
+	case *parse.RangeNode:
+		walkBranch(&n.BranchNode, fn)
+	case *parse.PipeNode:
+		if n == nil {
+			return
+		}
+		for _, c := range n.Cmds {
+			walk(c, fn)
+		}
+	case *parse.CommandNode:
+		for _, a := range n.Args {
+			walk(a, fn)
+		}
+	case *parse.FieldNode:
+		fn(n.Ident)
+	case *parse.ChainNode:
+		walk(n.Node, fn)
+	}
+}
+
+func walkBranch(n *parse.BranchNode, fn func(ident []string)) {
+	walk(n.Pipe, fn)
+	walk(n.List, fn)
+	walk(n.ElseList, fn)
+}
+
+// TestReferenceIsCurrent is the drift check between the variables and
+// docs/configuration.md, which is generated from their tags.
+func TestReferenceIsCurrent(t *testing.T) {
+	path := filepath.Join("..", "..", "docs", "configuration.md")
+	got := Reference()
+	if *update {
+		require.NoError(t, os.WriteFile(path, got, 0o600))
+	}
+	want, err := os.ReadFile(path) // #nosec G304 -- a fixed repository file
+	require.NoError(t, err)
+	assert.Equal(t, string(want), string(got), "docs/configuration.md is stale: run make docs")
+}
+
+// TestReferenceListsEveryVariable guards the generator itself: a variable
+// in any group reaches the reference exactly once.
+func TestReferenceListsEveryVariable(t *testing.T) {
+	ref := string(Reference())
+	var names []string
+	for _, root := range []any{&Settings{}, &Source{}} {
+		for _, g := range groupsOf(reflect.ValueOf(root).Elem()) {
+			for _, v := range g.variables {
+				names = append(names, v.name)
+				assert.Equal(t, 1, strings.Count(ref, "| `"+v.name+"` |"), "%s in the reference", v.name)
+			}
+		}
+	}
+	assert.Len(t, slices.Compact(slices.Sorted(slices.Values(names))), len(names), "a variable is declared twice: %v", names)
+}
