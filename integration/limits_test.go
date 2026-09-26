@@ -122,6 +122,9 @@ func TestRefusesToStart(t *testing.T) {
 		name     string
 		opts     harness.Options
 		wantText string
+		alsoText string
+		// absentText must appear nowhere in the output: a secret.
+		absentText string
 	}{
 		// Required variables, unset or empty.
 		{name: "no issuer", opts: harness.Options{Env: with("OIDC_ISSUER_URL", "")}, wantText: "OIDC_ISSUER_URL is required"},
@@ -135,8 +138,19 @@ func TestRefusesToStart(t *testing.T) {
 		{name: "bad MiB", opts: harness.Options{Env: with("MEMORY_LIMIT_MIB", "64MiB")}, wantText: `invalid MEMORY_LIMIT_MIB "64MiB": must be a whole number of MiB`},
 		{name: "bad body cap", opts: harness.Options{Env: with("MAX_REQUEST_BODY_BYTES", "4M")}, wantText: `invalid MAX_REQUEST_BODY_BYTES "4M": must be a whole number`},
 		{name: "upstream without a scheme", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "collector:4317")}, wantText: `invalid OTEL_EXPORTER_OTLP_ENDPOINT "collector:4317": must be an http:// or https:// URL`},
+		{name: "upstream without a port", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector")}, wantText: `invalid OTEL_EXPORTER_OTLP_ENDPOINT "http://collector": must name a port`},
+		{name: "upstream with a path", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "https://gw.example.com:4317/otlp")}, wantText: "must be scheme://host:port only"},
+		{name: "upstream with credentials", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "https://user:secret@gw.example.com:4317")}, wantText: `"https://user:xxxxx@gw.example.com:4317": must be scheme://host:port only`, absentText: "secret"}, // #nosec G101 -- a made-up password, to prove it is never printed
+		{name: "upstream with a query", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "https://gw.example.com:4317?tenant=a")}, wantText: "must be scheme://host:port only"},
 		{name: "bad log level", opts: harness.Options{Env: with("LOG_LEVEL", "verbose")}, wantText: `invalid LOG_LEVEL "verbose": must be debug, info, warn or error`},
 		{name: "bad log format", opts: harness.Options{Env: with("LOG_FORMAT", "text")}, wantText: `invalid LOG_FORMAT "text": must be json or console`},
+		// Faults in different groups are reported together.
+		{name: "two faults at once", opts: harness.Options{Env: map[string]string{
+			"LOG_LEVEL":                   "verbose",
+			"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
+			"OIDC_AUDIENCE":               harness.Audience,
+		}}, wantText: `invalid LOG_LEVEL "verbose"`, alsoText: "OIDC_ISSUER_URL is required"},
+		{name: "mounted with a bad log level", opts: harness.Options{ConfigYAML: directConfig, Env: set("LOG_FORMAT", "text")}, wantText: `invalid LOG_FORMAT "text"`},
 		// Rules across a group's variables.
 		{name: "certificate without its key", opts: harness.Options{Env: with("TLS_KEY_FILE", "")}, wantText: "TLS_CERT_FILE and TLS_KEY_FILE must be set together"},
 		{name: "spike limit above the limit", opts: harness.Options{Env: with("MEMORY_SPIKE_LIMIT_MIB", "64")}, wantText: "MEMORY_SPIKE_LIMIT_MIB (64) must be less than MEMORY_LIMIT_MIB (64)"},
@@ -156,6 +170,10 @@ func TestRefusesToStart(t *testing.T) {
 			got := harness.RunToExit(t, binary, tc.opts)
 			assert.NotZero(t, got.ExitCode, got.Output)
 			assert.Contains(t, got.Stderr, tc.wantText, "stderr, of all output:\n%s", got.Output)
+			assert.Contains(t, got.Stderr, tc.alsoText, "stderr, of all output:\n%s", got.Output)
+			if tc.absentText != "" {
+				assert.NotContains(t, got.Output, tc.absentText)
+			}
 		})
 	}
 }

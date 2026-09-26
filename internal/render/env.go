@@ -4,6 +4,7 @@ import (
 	"encoding"
 	"errors"
 	"fmt"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -87,7 +88,7 @@ type LogSettings struct {
 
 // SourceSettings chooses between the shipped pipeline and a mounted one.
 type SourceSettings struct {
-	CollectorConfig string `env:"COLLECTOR_CONFIG" doc:"Path of a collector configuration to run instead of the shipped pipeline; every other variable is then ignored unless that file reads it with '${env:...}'. The custom components remain available to it"`
+	CollectorConfig string `env:"COLLECTOR_CONFIG" doc:"Path of a collector configuration to run instead of the shipped pipeline. Nothing is rendered: every other variable is ignored unless that file reads it with '${env:...}', except 'LOG_LEVEL' and 'LOG_FORMAT', which still govern the run command's own lines. The custom components remain available to it"`
 }
 
 // Validate refuses a certificate without its key, or the reverse: half a
@@ -223,7 +224,7 @@ func (v variable) load(lookup Lookup) error {
 		raw = v.def
 	}
 	if err := parseInto(v.field, raw); err != nil {
-		return &VariableError{Name: v.name, Value: raw, Err: err}
+		return &VariableError{Name: v.name, Value: redacted(raw), Err: err}
 	}
 	return nil
 }
@@ -269,6 +270,14 @@ func parseInto(field reflect.Value, raw string) error {
 		panic("render: no parser for " + field.Type().String()) // programming error
 	}
 	return nil
+}
+
+// redacted is raw as an error may show it: a URL's password is masked.
+func redacted(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.User != nil {
+		return u.Redacted()
+	}
+	return raw
 }
 
 // splitList splits a comma-separated value, trimming each item and dropping

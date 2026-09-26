@@ -2,7 +2,9 @@ package render
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -34,25 +36,43 @@ func Command(set otelcol.CollectorSettings, lookup Lookup, tempDir string) *cobr
 	}
 }
 
-// logsOnly is the one group read before anything else, so that choosing
-// the configuration is itself logged as configured.
+// logsOnly is the group a mounted configuration still reads: the run
+// command's own lines are logged as configured either way.
 type logsOnly struct {
 	Logs LogSettings `group:"Own logs"`
 }
 
 func run(ctx context.Context, set otelcol.CollectorSettings, lookup Lookup, tempDir string) error {
-	var logs logsOnly
-	if err := Load(lookup, &logs); err != nil {
-		return err
+	// Everything is read before anything is acted on, so every missing or
+	// malformed variable is reported at once.
+	var src Source
+	var s Settings
+	var logs LogSettings
+	errs := Load(lookup, &src)
+	mounted := src.Config.CollectorConfig
+	if mounted != "" {
+		var l logsOnly
+		errs = errors.Join(errs, Load(lookup, &l))
+		logs = l.Logs
+	} else {
+		errs = errors.Join(errs, Load(lookup, &s))
+		logs = s.Logs
 	}
-	logger, err := newLogger(logs.Logs)
+	if errs != nil {
+		return errs
+	}
+
+	logger, err := newLogger(logs)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = logger.Sync() }() // stdout may not support fsync
 
-	path, err := configFile(logger, lookup, tempDir)
-	if err != nil {
+	path := mounted
+	if mounted != "" {
+		logger.Info("Running the mounted configuration; the shipped pipeline is not rendered",
+			zap.String("source", "mounted"), zap.String("path", mounted))
+	} else if path, err = writeRendered(logger, &s, tempDir); err != nil {
 		return err
 	}
 	// Rendered or mounted, the collector reads the file through the same
@@ -69,36 +89,43 @@ func run(ctx context.Context, set otelcol.CollectorSettings, lookup Lookup, temp
 	return nil
 }
 
-// configFile is the path of the configuration to run: COLLECTOR_CONFIG when
-// set, otherwise the shipped pipeline rendered from the environment into
-// tempDir.
-func configFile(logger *zap.Logger, lookup Lookup, tempDir string) (string, error) {
-	var src Source
-	if err := Load(lookup, &src); err != nil {
-		return "", err
-	}
-	if mounted := src.Config.CollectorConfig; mounted != "" {
-		logger.Info("Running the mounted configuration; the shipped pipeline is not rendered",
-			zap.String("source", "mounted"), zap.String("path", mounted))
-		return mounted, nil
-	}
-
-	var s Settings
-	if err := Load(lookup, &s); err != nil {
-		return "", err
-	}
-	yaml, err := Render(s)
+// writeRendered renders s into tempDir and returns the file's path.
+func writeRendered(logger *zap.Logger, s *Settings, tempDir string) (string, error) {
+	yaml, err := Render(*s)
 	if err != nil {
 		return "", err
 	}
 	path := filepath.Join(tempDir, RenderedFile)
-	if err := os.WriteFile(path, yaml, 0o600); err != nil {
+	if err := writeExclusive(path, yaml); err != nil {
 		return "", fmt.Errorf("writing the rendered configuration: %w", err)
 	}
-	fields := append([]zap.Field{zap.String("source", "rendered"), zap.String("path", path)}, resolved(&s)...)
+	fields := append([]zap.Field{zap.String("source", "rendered"), zap.String("path", path)}, resolved(s)...)
 	logger.Info("Rendered the configuration from the environment", fields...)
 	logger.Debug("Rendered configuration", zap.String("path", path), zap.String("yaml", string(yaml)))
 	return path, nil
+}
+
+// writeExclusive writes data to a new file at path that only this user can
+// read. The name is fixed and the directory may be shared, so whatever is
+// already there is removed and the file is created with O_EXCL, which also
+// refuses a symlink: an entry planted in between makes the create fail,
+// refusing startup, and is never written through, read or kept.
+func writeExclusive(path string, data []byte) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("removing the previous file: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- the fixed name in the temporary directory
+	if err != nil {
+		return fmt.Errorf("creating the file: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("writing the file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing the file: %w", err)
+	}
+	return nil
 }
 
 // resolved is every variable in s with the value it took, default or set.

@@ -70,4 +70,4 @@ standard Go way: mount the CA and set `SSL_CERT_FILE` or `SSL_CERT_DIR`.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `COLLECTOR_CONFIG` | *(empty)* | Path of a collector configuration to run instead of the shipped pipeline; every other variable is then ignored unless that file reads it with `${env:...}`. The custom components remain available to it |
+| `COLLECTOR_CONFIG` | *(empty)* | Path of a collector configuration to run instead of the shipped pipeline. Nothing is rendered: every other variable is ignored unless that file reads it with `${env:...}`, except `LOG_LEVEL` and `LOG_FORMAT`, which still govern the run command's own lines. The custom components remain available to it |

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -300,4 +301,28 @@ func TestCertificateReload(t *testing.T) {
 	for _, p := range protocols {
 		require.Eventually(t, servesSecond[p], eventually, 100*time.Millisecond, "the replaced certificate was never served over %s", p)
 	}
+}
+
+// TestRenderedFile plants a symlink where the rendered configuration goes,
+// as another user of a shared temporary directory could: the process
+// replaces it with a file of its own, readable only by itself, and never
+// writes through it.
+func TestRenderedFile(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	victim := filepath.Join(t.TempDir(), "victim")
+	require.NoError(t, os.WriteFile(victim, []byte("untouched"), 0o600))
+	rendered := filepath.Join(tmp, "otlp-collector-oidc.yaml")
+	require.NoError(t, os.Symlink(victim, rendered))
+
+	env := startShipped(t, map[string]string{"TMPDIR": tmp})
+
+	got, err := os.ReadFile(victim) // #nosec G304 -- the test's own file
+	require.NoError(t, err)
+	assert.Equal(t, "untouched", string(got), "the rendered configuration was written through the symlink")
+	info, err := os.Lstat(rendered)
+	require.NoError(t, err)
+	assert.True(t, info.Mode().IsRegular(), "mode %v", info.Mode())
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	assert.Contains(t, env.collector.Stdout(), `"path":"`+rendered+`"`)
 }
