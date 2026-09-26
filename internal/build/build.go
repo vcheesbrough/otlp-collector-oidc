@@ -1,4 +1,3 @@
-// Package build carries the identity the binary was linked with.
 package build
 
 // Command is the binary's name, and the collector's default service.name.

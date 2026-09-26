@@ -194,6 +194,8 @@ func TestMetrics(t *testing.T) {
 	filtered := func() float64 {
 		return scrape(t, shape.collector).Sum("otelcol_processor_filter_datapoints_filtered", nil)
 	}
+	// The startup line shows the pattern as the deployer wrote it.
+	assert.Contains(t, shape.collector.Stdout(), `"ALLOWED_METRIC_NAMES":"app\\.(requests|latency|size)"`)
 
 	for _, p := range protocols {
 		t.Run("identity and allowlists/"+p.String(), func(t *testing.T) {

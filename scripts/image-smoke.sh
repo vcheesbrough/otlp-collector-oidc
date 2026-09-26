@@ -5,7 +5,10 @@
 # upstream and no reachable identity provider, that the configuration was
 # rendered into /tmp, and that an export without a token is refused as
 # 'no token' over the embedded certificate (curl -k). Then mounts a pair
-# generated here and checks curl verifies it (curl --cacert).
+# generated here and checks curl verifies it (curl --cacert). The embedded
+# run uses the hardening the compose example does (uid 10001, read-only root
+# with a /tmp tmpfs, no capabilities, no-new-privileges), and the image must
+# carry its licence and the bundled modules' notices, Go's own included.
 set -eu
 
 image=$1
@@ -18,6 +21,13 @@ fail() {
 
 label=$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image")
 [ "$label" = "$version" ] || fail "OCI version label is '$label', want '$version'"
+# The product's licence and the bundled modules' notices ship in the image.
+docker run --rm --entrypoint /bin/sh "$image" -c '
+	test -s /usr/share/licenses/otlp-collector-oidc/LICENSE &&
+	test -s /usr/share/licenses/otlp-collector-oidc/third-party/MODULES &&
+	test -s /usr/share/licenses/otlp-collector-oidc/third-party/go.opentelemetry.io/collector/otelcol/LICENSE &&
+	test -s /usr/share/licenses/otlp-collector-oidc/third-party/go/LICENSE' ||
+	fail "licence or third-party notices missing from the image"
 reported=$(docker run --rm "$image" version)
 [ "$reported" = "$version" ] || fail "'version' reports '$reported', want '$version'"
 

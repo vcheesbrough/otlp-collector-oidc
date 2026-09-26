@@ -118,6 +118,8 @@ func (e *rejectionError) Error() string {
 	case reasonMissingClaim:
 		return "missing claim: " + e.detail
 	case reasonNotReady:
+		// Not built today, Authenticate returns ErrNotReady itself; the case
+		// keeps the switch exhaustive and the text in one place.
 		return ErrNotReady.Error()
 	default:
 		return "refused"

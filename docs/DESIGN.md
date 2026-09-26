@@ -519,7 +519,7 @@ and one for `/opentelemetry.proto.collector` (never stripped); rate limiting on 
   compose example's labels were proven once by hand against Traefik's Docker
   provider, both protocols answering the collector's `no token`.
 
-## 10. Open questions — verify while building, do not assume
+## 10. Questions verified while building
 
 **Resolved** (collector v0.161.0, grpc-go v1.83.2, Go 1.27; proven by the integration
 suite, so a version bump re-proves them):
@@ -549,8 +549,8 @@ suite, so a version bump re-proves them):
   is empty (rs/cors v1.11), despite its documentation; the renderer lists it.
 - `client.FromContext(ctx).Auth` inside the handlers — gRPC through `ServeHTTP` and
   HTTP alike — carries the auth data the interceptor set: grpc-go's handler transport
-  derives the stream context from the request's (a receiver unit test until the
-  pipeline reads the auth context).
+  derives the stream context from the request's (observed at the sink over both
+  protocols: identity stamping reads it, `TestIdentity`).
 - authentik 2026.8.3 (`docs/providers/authentik.md`, verified end to end against a
   fresh instance): a provider without `signing_key` issues an HS256 access token, which
   the profile refuses as `unsupported alg`; the access token carries `scope` as a
@@ -585,5 +585,6 @@ suite, so a version bump re-proves them):
   keeps them for its `${env:...}`. With no trace processors, the collector emits no
   self-traces and reads no trace exporter variables.
 
-**Open:**
+**Open:** none at `1.0.0`. The validated-token cache (ADR-0001's performance lever)
+is post-MVP work, taken up only once measured.
 

@@ -17,6 +17,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath \
       -ldflags "-s -w -X github.com/vcheesbrough/otlp-collector-oidc/internal/build.version=${VERSION}" \
       -o /out/otlp-collector-oidc ./cmd/otlp-collector-oidc
+# The licence and notice files of every module the binary links, most of
+# them the Apache-2.0 OpenTelemetry Collector components.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH scripts/third-party-notices.sh /out/licenses/third-party
 
 # TLS: a self-signed pair generated at image build, so the image serves TLS
 # with nothing mounted. It is per build and public: encryption in transit
@@ -35,12 +40,17 @@ ARG REVISION=unknown
 LABEL org.opencontainers.image.title="otlp-collector-oidc" \
       org.opencontainers.image.description="OpenTelemetry Collector distribution that authenticates OTLP clients with OIDC" \
       org.opencontainers.image.source="https://github.com/vcheesbrough/otlp-collector-oidc" \
+      org.opencontainers.image.url="https://github.com/vcheesbrough/otlp-collector-oidc" \
+      org.opencontainers.image.documentation="https://github.com/vcheesbrough/otlp-collector-oidc/blob/main/README.md" \
       org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}"
 RUN addgroup -S -g 10001 otel && adduser -S -D -H -u 10001 -G otel otel \
  && install -d -m 0755 /etc/otlp-collector-oidc /etc/otlp-collector-oidc/tls
 COPY --from=build /out/otlp-collector-oidc /usr/local/bin/otlp-collector-oidc
+# This product's licence, and every bundled module's, where images keep them.
+COPY LICENSE LICENSE-TIER.md /usr/share/licenses/otlp-collector-oidc/
+COPY --from=build /out/licenses/third-party /usr/share/licenses/otlp-collector-oidc/third-party
 COPY --chown=otel:otel --chmod=0400 --from=tls /tls/key.pem /etc/otlp-collector-oidc/tls/key.pem
 COPY --chmod=0444 --from=tls /tls/cert.pem /etc/otlp-collector-oidc/tls/cert.pem
 USER 10001:10001

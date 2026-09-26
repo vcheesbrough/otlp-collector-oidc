@@ -15,8 +15,11 @@ import (
 // MetricNamePattern is ALLOWED_METRIC_NAMES: a regular expression the whole
 // metric name must match. Empty admits nothing.
 type MetricNamePattern struct {
-	ServiceNamePattern
+	pattern ServiceNamePattern
 }
+
+// String is the pattern as set, for the startup line.
+func (p MetricNamePattern) String() string { return string(p.pattern) }
 
 // UnmarshalText accepts the empty string (every metric dropped) or a pattern
 // ServiceNamePattern accepts.
@@ -25,16 +28,16 @@ func (p *MetricNamePattern) UnmarshalText(text []byte) error {
 		*p = MetricNamePattern{}
 		return nil
 	}
-	return p.ServiceNamePattern.UnmarshalText(text)
+	return p.pattern.UnmarshalText(text)
 }
 
 // metricNameFilter drops a metric whose name the pattern does not match, or
 // every metric when there is no pattern.
 func metricNameFilter(pattern MetricNamePattern) string {
-	if pattern.ServiceNamePattern == "" {
+	if pattern.pattern == "" {
 		return "true"
 	}
-	return fmt.Sprintf(`not IsMatch(metric.name, %s)`, ottlString(anchored(string(pattern.ServiceNamePattern))))
+	return fmt.Sprintf(`not IsMatch(metric.name, %s)`, ottlString(anchored(string(pattern.pattern))))
 }
 
 // metricResourceKeys is what a client metric's resource keeps: the client

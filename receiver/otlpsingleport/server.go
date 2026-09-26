@@ -3,6 +3,7 @@ package otlpsingleport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -97,11 +98,11 @@ func (s *singlePort) Start(ctx context.Context, host component.Host) error {
 	srv, err := s.settings.server.ToServer(ctx, host.GetExtensions(), s.settings.telemetry, s,
 		confighttp.WithErrorHandler(s.settings.errorHandler))
 	if err != nil {
-		return err
+		return fmt.Errorf("creating the server: %w", err)
 	}
 	ln, err := s.settings.server.ToListener(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("opening the listener: %w", err)
 	}
 	s.httpServer = srv
 	s.settings.telemetry.Logger.Info("Starting OTLP single-port server",

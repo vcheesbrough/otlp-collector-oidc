@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/vcheesbrough/otlp-collector-oidc/internal/upstream"
 )
 
 // Lookup reads one environment variable; os.LookupEnv in the binary.
@@ -219,24 +221,13 @@ func defaultOf[T any](field string) string {
 	return f.Tag.Get("default")
 }
 
-// ErrRequired marks a required variable that is unset or empty.
-var ErrRequired = errors.New("is required")
+// ErrRequired marks a required variable that is unset or empty. It is
+// upstream's, so one errors.Is matches either package's refusal.
+var ErrRequired = upstream.ErrRequired
 
-// VariableError is a variable that is missing or whose value is malformed.
-type VariableError struct {
-	Name  string
-	Value string
-	Err   error
-}
-
-func (e *VariableError) Error() string {
-	if errors.Is(e.Err, ErrRequired) {
-		return e.Name + " " + e.Err.Error()
-	}
-	return fmt.Sprintf("invalid %s %q: %v", e.Name, e.Value, e.Err)
-}
-
-func (e *VariableError) Unwrap() error { return e.Err }
+// VariableError is a variable that is missing or whose value is malformed;
+// the same type internal/upstream reports.
+type VariableError = upstream.VariableError
 
 // validator is a group with a rule across its fields.
 type validator interface {
@@ -371,7 +362,6 @@ var (
 // parseInto sets field from raw according to the field's type.
 func parseInto(field reflect.Value, raw string) error {
 	if field.Addr().Type().Implements(textUnmarshalerType) {
-		//nolint:forcetypeassert // checked on the line above
 		return field.Addr().Interface().(encoding.TextUnmarshaler).UnmarshalText([]byte(raw))
 	}
 	if field.Type() == durationType {

@@ -8,7 +8,7 @@
 # serversTransports in a file, not in labels).
 services:
   otlp-collector-oidc:
-    image: ${OTLP_COLLECTOR_OIDC_IMAGE:-ghcr.io/vcheesbrough/otlp-collector-oidc:edge}
+    image: ${OTLP_COLLECTOR_OIDC_IMAGE:-ghcr.io/vcheesbrough/otlp-collector-oidc:latest}
     restart: unless-stopped
     environment:
       OIDC_ISSUER_URL: https://auth.example.com/application/o/telemetry-prod/
