@@ -51,11 +51,17 @@ extensions:
 service:
   extensions: [health_check, oidcclientauth]
   telemetry:
+    # The process's own identity, on its logs and on target_info at :8888.
+    # service.version is the build's, which the collector adds itself.
+    resource:
+      "service.name": "otlp-collector-oidc"
     logs:
       level: "info"
       encoding: "json"
       output_paths: ["stdout"]
       error_output_paths: ["stderr"]
+      # Own logs to the logs upstream (LOG_OUTPUT), as the SDK's schema has it.
+      processors: [{"batch":{"exporter":{"otlp":{"protocol":"grpc","endpoint":"http://collector:4317","insecure":true,"compression":"gzip","timeout":10000}}}}]
     metrics:
       readers:
         - pull:

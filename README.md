@@ -122,7 +122,11 @@ provider signed by a private CA is trusted by mounting the CA and setting
   `otelcol_exporter_enqueue_failed_*` for exports dropped with the queue full, and
   `otelcol_exporter_queue_size` against `otelcol_exporter_queue_capacity`
   (`UPSTREAM_QUEUE_SIZE`).
-- **Logs:** stdout, JSON unless `LOG_FORMAT=console`. The first line records whether
+- **Logs:** every line the process writes also goes to the logs upstream as OTLP,
+  identified as `service.name` `otlp-collector-oidc` (`OTEL_SERVICE_NAME`), the
+  build's `service.version`, and `OTEL_RESOURCE_ATTRIBUTES`; `LOG_OUTPUT` picks
+  `both` (default), `otlp` or `stdout`. Stdout is JSON unless `LOG_FORMAT=console`.
+  The first line records whether
   the configuration was rendered or mounted, the value every variable took and each
   signal's resolved upstream, headers named but never valued. A
   refusal logs one warning per reason per `REJECTION_LOG_INTERVAL`, with `reason` as
@@ -154,8 +158,8 @@ Pre-release (`0.x`): single-port OTLP/gRPC and OTLP/HTTP over TLS, every request
 authenticated with an OIDC access token, configured entirely by environment, forwarding
 traces and logs to OTLP/gRPC or OTLP/HTTP upstreams, per signal, set by the standard
 `OTEL_EXPORTER_OTLP_*` variables. The identity is validated but not yet stamped onto
-the telemetry; identity stamping, the metrics pipeline and its own logs upstream
-follow —
+the telemetry; its own logs go upstream as OTLP. Identity stamping, the metrics
+pipeline and the dashboard follow —
 [board](https://bored.desync.link/boards/otlp-collector-oidc).
 
 ## Licence

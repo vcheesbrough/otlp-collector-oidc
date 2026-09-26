@@ -23,6 +23,12 @@ type Settings struct {
 	Resources ResourceSettings `group:"Resources and batching"`
 	Self      SelfSettings     `group:"Health and own metrics"`
 	Logs      LogSettings      `group:"Own logs"`
+	Own       OwnSettings      `group:"Own telemetry"`
+
+	// InstanceID is this process's service.instance.id, set by the run
+	// command so its own lines and the collector's carry the same one. Not
+	// a variable; empty leaves the collector's own.
+	InstanceID string
 }
 
 // Source is where the configuration comes from. The run command reads it;
@@ -81,6 +87,15 @@ type LogSettings struct {
 	Format LogFormat `env:"LOG_FORMAT" default:"json" doc:"Stdout encoding, 'json' or 'console'"`
 }
 
+// OwnSettings is how the process's own logs leave it and what they are
+// identified as. The logs go where client logs go: the logs signal's
+// resolved upstream.
+type OwnSettings struct {
+	Output             LogOutput    `env:"LOG_OUTPUT"               default:"both"                doc:"'both', 'otlp' or 'stdout'. Own logs go to the logs upstream as OTLP unless 'stdout'; stdout keeps a copy unless 'otlp'. On a platform that also ships container stdout to the same store, pick one"`
+	ServiceName        string       `env:"OTEL_SERVICE_NAME"        default:"otlp-collector-oidc" doc:"This process's own 'service.name' on its logs and metrics; takes precedence over one in 'OTEL_RESOURCE_ATTRIBUTES'"`
+	ResourceAttributes KeyValueList `env:"OTEL_RESOURCE_ATTRIBUTES"                               doc:"'key=value,...', values percent-decoded: this process's own resource attributes, on its logs and metrics. 'service.version' is the build's and is ignored with a warning. Not what is stamped on client data"`
+}
+
 // SourceSettings chooses between the shipped pipeline and a mounted one.
 type SourceSettings struct {
 	CollectorConfig string `env:"COLLECTOR_CONFIG" doc:"Path of a collector configuration to run instead of the shipped pipeline. Nothing is rendered: every other variable is ignored unless that file reads it with '${env:...}', except 'LOG_LEVEL' and 'LOG_FORMAT', which still govern the run command's own lines. The custom components remain available to it"`
@@ -93,6 +108,17 @@ func (s ListenerSettings) Validate() error {
 	keyDefault := s.TLSKeyFile == defaultOf[ListenerSettings]("TLSKeyFile")
 	if certDefault != keyDefault {
 		return errors.New("TLS_CERT_FILE and TLS_KEY_FILE must be set together")
+	}
+	return nil
+}
+
+// Validate holds the rules across groups, once every group has loaded.
+func (s Settings) Validate() error {
+	if !s.Own.Output.Upstream() {
+		return nil
+	}
+	if cfg, ok := s.Upstream.logs(); ok && !cfg.Plaintext && cfg.SkipVerify {
+		return errors.New("UPSTREAM_TLS_INSECURE_SKIP_VERIFY cannot apply to the process's own logs, whose exporter always verifies: set LOG_OUTPUT=stdout, or trust the upstream with OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE")
 	}
 	return nil
 }
@@ -168,6 +194,12 @@ func Load(lookup Lookup, dst any) error {
 			}
 		}
 		errs = append(errs, groupErrs...)
+	}
+	// The root's own rule, across groups, only once every group loaded.
+	if val, ok := root.Elem().Interface().(validator); ok && len(errs) == 0 {
+		if err := val.Validate(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	return errors.Join(errs...)
 }

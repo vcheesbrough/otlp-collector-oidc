@@ -94,11 +94,25 @@ extensions:
 service:
   extensions: [health_check, oidcclientauth]
   telemetry:
+    # The process's own identity, on its logs and on target_info at :8888.
+    # service.version is the build's, which the collector adds itself.
+    resource:
+      "service.name": {{ q .Own.ServiceName }}
+{{- with .InstanceID }}
+      "service.instance.id": {{ q . }}
+{{- end }}
+{{- range .Own.ResourceAttributes.Without "service.name" "service.version" }}
+      {{ q .Key }}: {{ q .Value }}
+{{- end }}
     logs:
       level: {{ q .Logs.Level }}
       encoding: {{ q .Logs.Format }}
-      output_paths: ["stdout"]
+      output_paths: [{{ if .Own.Output.Stdout }}"stdout"{{ end }}]
       error_output_paths: ["stderr"]
+{{- with .SelfLogProcessors }}
+      # Own logs to the logs upstream (LOG_OUTPUT), as the SDK's schema has it.
+      processors: {{ . }}
+{{- end }}
     metrics:
       readers:
         - pull:

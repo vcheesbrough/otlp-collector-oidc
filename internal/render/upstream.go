@@ -149,6 +149,12 @@ func endpoints(cfg upstream.ExporterConfig, sigs []upstream.Signal) []Endpoint {
 	return out
 }
 
+// logs is the logs signal's upstream, which the process's own logs follow.
+func (u UpstreamSettings) logs() (upstream.ExporterConfig, bool) {
+	cfg, ok := u.bySignal[upstream.SignalLogs]
+	return cfg, ok
+}
+
 // redacted is u with every header value replaced, for the rendering that is
 // logged.
 func (u UpstreamSettings) redacted() UpstreamSettings {

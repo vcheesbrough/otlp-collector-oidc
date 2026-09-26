@@ -79,6 +79,14 @@ Every `OTEL_EXPORTER_OTLP_*` variable above also has `OTEL_EXPORTER_OTLP_TRACES_
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`; at `debug` the rendered configuration is logged |
 | `LOG_FORMAT` | `json` | Stdout encoding, `json` or `console` |
 
+## Own telemetry
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LOG_OUTPUT` | `both` | `both`, `otlp` or `stdout`. Own logs go to the logs upstream as OTLP unless `stdout`; stdout keeps a copy unless `otlp`. On a platform that also ships container stdout to the same store, pick one |
+| `OTEL_SERVICE_NAME` | `otlp-collector-oidc` | This process's own `service.name` on its logs and metrics; takes precedence over one in `OTEL_RESOURCE_ATTRIBUTES` |
+| `OTEL_RESOURCE_ATTRIBUTES` | *(empty)* | `key=value,...`, values percent-decoded: this process's own resource attributes, on its logs and metrics. `service.version` is the build's and is ignored with a warning. Not what is stamped on client data |
+
 ## Replacing the pipeline
 
 | Variable | Default | Meaning |

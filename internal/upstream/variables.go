@@ -76,6 +76,20 @@ func Variables() []Variable {
 	return out
 }
 
+// Names is every variable Resolve may read, per-signal forms included.
+func Names() []string {
+	var out []string
+	for _, s := range settings() {
+		out = append(out, s.baseName())
+		if s.perSignal {
+			for _, sig := range Signals() {
+				out = append(out, s.signalName(sig))
+			}
+		}
+	}
+	return out
+}
+
 // PerSignalNote is the reference's paragraph on the per-signal forms.
 const PerSignalNote = "Every `" + Prefix + "*` variable above also has `" + Prefix + "TRACES_*`, `" +
 	Prefix + "LOGS_*` and `" + Prefix + "METRICS_*` forms, which take precedence for that signal, as " +

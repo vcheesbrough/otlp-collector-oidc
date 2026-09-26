@@ -57,6 +57,12 @@ extensions:
 service:
   extensions: [health_check, oidcclientauth]
   telemetry:
+    # The process's own identity, on its logs and on target_info at :8888.
+    # service.version is the build's, which the collector adds itself.
+    resource:
+      "service.name": "collector-eu"
+      "deployment.environment.name": "prod"
+      "host.name": "edge 1"
     logs:
       level: "debug"
       encoding: "console"

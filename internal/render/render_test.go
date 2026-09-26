@@ -55,6 +55,22 @@ var shapes = map[string]map[string]string{
 		"SELF_METRICS_ADDR":           "127.0.0.1:9888",
 		"LOG_LEVEL":                   "debug",
 		"LOG_FORMAT":                  "console",
+		"LOG_OUTPUT":                  "stdout",
+		"OTEL_SERVICE_NAME":           "collector-eu",
+		"OTEL_RESOURCE_ATTRIBUTES":    "deployment.environment.name=prod,host.name=edge%201",
+	},
+	// Own logs to the logs upstream alone, following a LOGS override to an
+	// HTTP endpoint with its own headers; a service.version in the resource
+	// attributes is the build's and is dropped.
+	"own-logs-otlp": {
+		"OIDC_ISSUER_URL":                  "https://idp.example.com/",
+		"OIDC_AUDIENCE":                    "telemetry",
+		"OTEL_EXPORTER_OTLP_ENDPOINT":      "https://tempo.example.com:4317",
+		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "http/protobuf",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://loki.example.com/otlp/v1/logs",
+		"OTEL_EXPORTER_OTLP_LOGS_HEADERS":  "X-Scope-OrgID=tenant-1",
+		"LOG_OUTPUT":                       "otlp",
+		"OTEL_RESOURCE_ATTRIBUTES":         "service.version=9.9.9,service.name=ignored,team=obs",
 	},
 	// One HTTP upstream for every signal: one exporter, the base endpoint
 	// with the signal paths still to append.
@@ -98,6 +114,7 @@ var shapes = map[string]map[string]string{
 		"REQUIRED_CLAIMS":             "sub,'quoted',#hash",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317",
 		"OTEL_EXPORTER_OTLP_HEADERS":  "x-a=%22%24%7Benv%3AHOME%7D%20%23%20exporters%3A%20%7B%7D",
+		"OTEL_RESOURCE_ATTRIBUTES":    "a%22b=%24%7Benv%3AHOME%7D",
 	},
 }
 

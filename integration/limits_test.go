@@ -171,6 +171,9 @@ func TestRefusesToStart(t *testing.T) {
 		{name: "per-signal CA for a plaintext signal", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE", "/run/ca.pem")}, wantText: "OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE is set, but the logs upstream is plaintext"},
 		{name: "per-signal insecure over https with http/protobuf", opts: harness.Options{Env: withEach("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf", "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "https://loki.example.com/otlp/v1/logs", "OTEL_EXPORTER_OTLP_LOGS_INSECURE", "true")}, wantText: "OTEL_EXPORTER_OTLP_LOGS_INSECURE=true applies to grpc only"},
 		{name: "insecure with no grpc upstream", opts: harness.Options{Env: withEach("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf", "OTEL_EXPORTER_OTLP_INSECURE", "true")}, wantText: "OTEL_EXPORTER_OTLP_INSECURE=true, but no upstream uses grpc"},
+		{name: "bad log output", opts: harness.Options{Env: with("LOG_OUTPUT", "file")}, wantText: `invalid LOG_OUTPUT "file": must be both, otlp or stdout`},
+		{name: "malformed resource attributes", opts: harness.Options{Env: with("OTEL_RESOURCE_ATTRIBUTES", "team=obs,oops")}, wantText: `invalid OTEL_RESOURCE_ATTRIBUTES "team=obs,oops": pair 2 is not key=value`},
+		{name: "skip-verify with own logs upstream", opts: harness.Options{Env: withEach("OTEL_EXPORTER_OTLP_ENDPOINT", "https://gw.example.com:4317", "UPSTREAM_TLS_INSECURE_SKIP_VERIFY", "true")}, wantText: "UPSTREAM_TLS_INSECURE_SKIP_VERIFY cannot apply to the process's own logs"},
 		{name: "bad log level", opts: harness.Options{Env: with("LOG_LEVEL", "verbose")}, wantText: `invalid LOG_LEVEL "verbose": must be debug, info, warn or error`},
 		{name: "bad log format", opts: harness.Options{Env: with("LOG_FORMAT", "text")}, wantText: `invalid LOG_FORMAT "text": must be json or console`},
 		// Faults in different groups are reported together.

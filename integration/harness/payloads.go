@@ -133,3 +133,31 @@ func hasMarker(r pcommon.Resource, marker string) bool {
 	v, ok := r.Attributes().Get(MarkerKey)
 	return ok && v.Str() == marker
 }
+
+// OwnLog is a log record the collector exported about itself, with its
+// resource.
+type OwnLog struct {
+	Record   plog.LogRecord
+	Resource pcommon.Resource
+}
+
+// FindOwnLogs is every record whose resource's service.name is serviceName
+// and whose body is message.
+func FindOwnLogs(received []plog.Logs, serviceName, message string) []OwnLog {
+	var out []OwnLog
+	for _, ld := range received {
+		for _, rl := range ld.ResourceLogs().All() {
+			if name, ok := rl.Resource().Attributes().Get("service.name"); !ok || name.Str() != serviceName {
+				continue
+			}
+			for _, sl := range rl.ScopeLogs().All() {
+				for _, lr := range sl.LogRecords().All() {
+					if lr.Body().AsString() == message {
+						out = append(out, OwnLog{Record: lr, Resource: rl.Resource()})
+					}
+				}
+			}
+		}
+	}
+	return out
+}

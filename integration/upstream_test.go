@@ -147,7 +147,8 @@ func TestUpstreamInheritedInsecure(t *testing.T) {
 func TestUpstreamSkipVerify(t *testing.T) {
 	t.Parallel()
 	sink := harness.NewTLSSink(t, harness.NewCertificate(t))
-	env := startShippedWith(t, sink, map[string]string{"UPSTREAM_TLS_INSECURE_SKIP_VERIFY": "true"}, nil)
+	// Own logs cannot skip verification, so they stay on stdout.
+	env := startShippedWith(t, sink, map[string]string{"UPSTREAM_TLS_INSECURE_SKIP_VERIFY": "true", "LOG_OUTPUT": "stdout"}, nil)
 	deliver(t, env, "skip-verify", sink, sink)
 }
 

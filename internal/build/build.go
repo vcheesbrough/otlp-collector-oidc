@@ -1,6 +1,9 @@
 // Package build carries the identity the binary was linked with.
 package build
 
+// Command is the binary's name, and the collector's default service.name.
+const Command = "otlp-collector-oidc"
+
 // version is set at link time with
 // -ldflags "-X github.com/vcheesbrough/otlp-collector-oidc/internal/build.version=<v>".
 // It is the one package variable the standards allow: the linker writes it
