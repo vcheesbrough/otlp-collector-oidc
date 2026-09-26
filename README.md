@@ -124,6 +124,14 @@ provider signed by a private CA is trusted by mounting the CA and setting
   `otelcol_exporter_enqueue_failed_*` for exports dropped with the queue full, and
   `otelcol_exporter_queue_size` against `otelcol_exporter_queue_capacity`
   (`UPSTREAM_QUEUE_SIZE`).
+- **Dashboard, alerts, runbook:** [`dashboards/otlp-collector-oidc.json`](dashboards/otlp-collector-oidc.json)
+  is a Grafana dashboard over `:8888`, one for every environment (filtered on
+  `deployment.environment.name` through `target_info`);
+  [`alerts/otlp-collector-oidc.yaml`](alerts/otlp-collector-oidc.yaml) holds
+  Prometheus rules for the process going absent, `not ready`, tokens refused and
+  data dropped upstream, each linked to its entry in [the runbook](docs/runbook.md).
+  They assume Prometheus's underscore names (`deployment_environment_name`): with
+  Prometheus 3, set `metric_name_escaping_scheme: underscores` on the scrape job.
 - **Logs:** every line the process writes also goes to the logs upstream as OTLP,
   identified as `service.name` `otlp-collector-oidc` (`OTEL_SERVICE_NAME`), the
   build's `service.version`, and `OTEL_RESOURCE_ATTRIBUTES`; `LOG_OUTPUT` picks
@@ -161,7 +169,7 @@ authenticated with an OIDC access token, configured entirely by environment, for
 traces and logs to OTLP/gRPC or OTLP/HTTP upstreams, per signal, set by the standard
 `OTEL_EXPORTER_OTLP_*` variables. The identity is validated but not yet stamped onto
 the telemetry; its own logs go upstream as OTLP. Identity stamping, the metrics
-pipeline and the dashboard follow —
+pipeline follow; the dashboard, alerts and runbook ship with it —
 [board](https://bored.desync.link/boards/otlp-collector-oidc).
 
 ## Licence
