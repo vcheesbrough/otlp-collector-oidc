@@ -87,6 +87,8 @@ func failureCounters() []string {
 		"otelcol_exporter_enqueue_failed_log_records",
 		"otelcol_oidcclientauth_rejections",
 		"otelcol_otlpsingleport_requests_refused",
+		"otelcol_processor_filter_spans_filtered",
+		"otelcol_processor_filter_logs_filtered",
 	}
 }
 
@@ -109,6 +111,8 @@ func TestArtefactMetrics(t *testing.T) {
 	resp, err := env.clients.http.Do(t.Context(), http.MethodGet, harness.SignalTraces.Path(), nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusMethodNotAllowed, resp.Status)
+	// A resource with no service.name, dropped by the bounds.
+	exportBoth(t, env, protocolHTTP, resourceItem{marker: "artefacts/unnamed", at: time.Now()})
 
 	sink.SetBehaviour(t, harness.BehaviourDown)
 	// A loop rather than require.Eventually: each pass asserts every export's

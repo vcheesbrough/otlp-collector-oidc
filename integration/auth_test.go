@@ -30,6 +30,8 @@ func oidcEnv(iss *harness.Issuer) map[string]string {
 	return map[string]string{
 		"OIDC_ISSUER_URL": iss.URL(),
 		"OIDC_AUDIENCE":   harness.Audience,
+		// Any name: the bounds scenarios narrow it themselves.
+		"ALLOWED_SERVICE_NAMES": ".*",
 	}
 }
 

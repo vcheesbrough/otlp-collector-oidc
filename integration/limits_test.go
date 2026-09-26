@@ -98,6 +98,7 @@ func TestRefusesToStart(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
 		"OIDC_ISSUER_URL":             "http://127.0.0.1:1",
 		"OIDC_AUDIENCE":               harness.Audience,
+		"ALLOWED_SERVICE_NAMES":       ".*",
 	}
 	// with is base with k set to v, or without k when v is empty.
 	with := func(k, v string) map[string]string {
@@ -138,6 +139,12 @@ func TestRefusesToStart(t *testing.T) {
 		{name: "no issuer", opts: harness.Options{Env: with("OIDC_ISSUER_URL", "")}, wantText: "OIDC_ISSUER_URL is required"},
 		{name: "empty issuer", opts: harness.Options{Env: set("OIDC_ISSUER_URL", "")}, wantText: "OIDC_ISSUER_URL is required"},
 		{name: "no audience", opts: harness.Options{Env: with("OIDC_AUDIENCE", "")}, wantText: "OIDC_AUDIENCE is required"},
+		{name: "no allowed service names", opts: harness.Options{Env: with("ALLOWED_SERVICE_NAMES", "")}, wantText: "ALLOWED_SERVICE_NAMES is required"},
+		{name: "allowed service names not a regex", opts: harness.Options{Env: with("ALLOWED_SERVICE_NAMES", "app-(web")}, wantText: `invalid ALLOWED_SERVICE_NAMES "app-(web": must be a regular expression: missing closing )`},
+		{name: "allowed service names escaping the anchors", opts: harness.Options{Env: with("ALLOWED_SERVICE_NAMES", "a)|(b")}, wantText: `invalid ALLOWED_SERVICE_NAMES "a)|(b": must be a regular expression: unexpected )`},
+		{name: "allowed service names with a newline", opts: harness.Options{Env: with("ALLOWED_SERVICE_NAMES", "app\nother")}, wantText: "invalid ALLOWED_SERVICE_NAMES", alsoText: "must not contain control characters"},
+		{name: "negative future skew", opts: harness.Options{Env: with("MAX_FUTURE_SKEW", "-1m")}, wantText: "MAX_FUTURE_SKEW (-1m0s) must not be negative"},
+		{name: "zero past age", opts: harness.Options{Env: with("MAX_PAST_AGE", "0s")}, wantText: "MAX_PAST_AGE (0s) must be positive"},
 		{name: "no upstream endpoint", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "")}, wantText: "OTEL_EXPORTER_OTLP_ENDPOINT is required"},
 		// Values that do not parse.
 		{name: "bad duration", opts: harness.Options{Env: with("OIDC_DISCOVERY_RETRY", "soon")}, wantText: `invalid OIDC_DISCOVERY_RETRY "soon": must be a duration`},

@@ -10,18 +10,17 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.161.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/attributesprocessor v0.161.0
+	github.com/open-telemetry/opentelemetry-collector-contrib/processor/filterprocessor v0.161.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourceprocessor v0.161.0
+	github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor v0.161.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/collector/client v1.67.0
 	go.opentelemetry.io/collector/component v1.67.0
 	go.opentelemetry.io/collector/component/componentstatus v0.161.0
 	go.opentelemetry.io/collector/component/componenttest v0.161.0
-	go.opentelemetry.io/collector/config/configauth v1.67.0
 	go.opentelemetry.io/collector/config/confighttp v0.161.0
 	go.opentelemetry.io/collector/config/configopaque v1.67.0
-	go.opentelemetry.io/collector/config/configoptional v1.67.0
-	go.opentelemetry.io/collector/config/configtls v1.67.0
 	go.opentelemetry.io/collector/confmap v1.67.0
 	go.opentelemetry.io/collector/confmap/provider/envprovider v1.67.0
 	go.opentelemetry.io/collector/confmap/provider/fileprovider v1.67.0
@@ -62,6 +61,7 @@ require (
 require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.35.0 // indirect
+	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/alecthomas/participle/v2 v2.1.4 // indirect
 	github.com/antchfx/xmlquery v1.5.1 // indirect
@@ -107,6 +107,7 @@ require (
 	github.com/knadh/koanf/providers/file v1.2.1 // indirect
 	github.com/knadh/koanf/providers/fs v1.0.1 // indirect
 	github.com/knadh/koanf/v2 v2.3.6 // indirect
+	github.com/lightstep/go-expohisto v1.0.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
 	github.com/magefile/mage v1.15.0 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
@@ -118,6 +119,7 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/internal/coreinternal v0.161.0 // indirect
 	github.com/open-telemetry/opentelemetry-collector-contrib/internal/filter v0.161.0 // indirect
 	github.com/open-telemetry/opentelemetry-collector-contrib/internal/healthcheck v0.161.0 // indirect
+	github.com/open-telemetry/opentelemetry-collector-contrib/internal/pdatautil v0.161.0 // indirect
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl v0.161.0 // indirect
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.161.0 // indirect
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/status v0.161.0 // indirect
@@ -142,12 +144,15 @@ require (
 	go.opentelemetry.io/collector v0.161.0 // indirect
 	go.opentelemetry.io/collector/cmd/builder v0.161.0 // indirect
 	go.opentelemetry.io/collector/cmd/mdatagen v0.161.0 // indirect
+	go.opentelemetry.io/collector/config/configauth v1.67.0 // indirect
 	go.opentelemetry.io/collector/config/configcompression v1.67.0 // indirect
 	go.opentelemetry.io/collector/config/configgrpc v1.67.0 // indirect
 	go.opentelemetry.io/collector/config/configmiddleware v1.67.0 // indirect
 	go.opentelemetry.io/collector/config/confignet v1.67.0 // indirect
+	go.opentelemetry.io/collector/config/configoptional v1.67.0 // indirect
 	go.opentelemetry.io/collector/config/configretry v1.67.0 // indirect
 	go.opentelemetry.io/collector/config/configtelemetry v0.161.0 // indirect
+	go.opentelemetry.io/collector/config/configtls v1.67.0 // indirect
 	go.opentelemetry.io/collector/confmap/xconfmap v0.161.0 // indirect
 	go.opentelemetry.io/collector/connector/connectortest v0.161.0 // indirect
 	go.opentelemetry.io/collector/connector/xconnector v0.161.0 // indirect

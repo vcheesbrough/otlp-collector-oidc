@@ -30,6 +30,7 @@ hosting. One image, configured with environment variables, TLS on by default.
 docker run --rm -p 4318:4318 \
   -e OIDC_ISSUER_URL=https://idp.example.com/application/o/telemetry/ \
   -e OIDC_AUDIENCE=your-client-id \
+  -e ALLOWED_SERVICE_NAMES='web-app|ios-app' \
   -e OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4317 \
   ghcr.io/vcheesbrough/otlp-collector-oidc:edge
 ```
@@ -59,6 +60,7 @@ here traces to Tempo over gRPC and logs to Loki's OTLP endpoint over HTTP:
 docker run --rm -p 4318:4318 \
   -e OIDC_ISSUER_URL=https://idp.example.com/application/o/telemetry/ \
   -e OIDC_AUDIENCE=your-client-id \
+  -e ALLOWED_SERVICE_NAMES='web-app|ios-app' \
   -e OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317 \
   -e OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf \
   -e OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://loki:3100/otlp/v1/logs \
@@ -69,9 +71,14 @@ docker run --rm -p 4318:4318 \
 ## Configuration
 
 Every setting is an environment variable; the
-[configuration reference](docs/configuration.md) lists each with its default. Three
-are required: `OIDC_ISSUER_URL`, `OIDC_AUDIENCE` and `OTEL_EXPORTER_OTLP_ENDPOINT`
-(`http://` for a plaintext upstream, `https://` for TLS). A missing required variable
+[configuration reference](docs/configuration.md) lists each with its default. Four
+are required: `OIDC_ISSUER_URL`, `OIDC_AUDIENCE`, `OTEL_EXPORTER_OTLP_ENDPOINT`
+(`http://` for a plaintext upstream, `https://` for TLS) and `ALLOWED_SERVICE_NAMES`, a
+regular expression the whole `service.name` of a client's resource must match (`.*`
+admits any): `service.name` becomes a stream label downstream, so the deployer says
+which names are admitted. Spans and records outside it, or older than `MAX_PAST_AGE`,
+are dropped after the client's `200` and counted; timestamps further ahead than
+`MAX_FUTURE_SKEW` are set to now. A missing required variable
 or a value that does not parse stops the process before it listens, and the error
 names the variable and the value — except a header's, which is never printed.
 
@@ -175,8 +182,9 @@ traces and logs to OTLP/gRPC or OTLP/HTTP upstreams, per signal, set by the stan
 `OTEL_EXPORTER_OTLP_*` variables. The token's identity is stamped onto the
 telemetry — `user.id`, `user.name`, `user.email`, `user.full_name` on every
 span and log record (`CLAIM_ATTRIBUTES`), the deployment's attributes on every
-resource (`CLIENT_RESOURCE_ATTRIBUTES`) — and its own logs go upstream as OTLP, with
-a dashboard, alerts and runbook. Payload bounds and the metrics pipeline follow —
+resource (`CLIENT_RESOURCE_ATTRIBUTES`) — bounds what a client can cost
+(`ALLOWED_SERVICE_NAMES`, timestamp clamps), and its own logs go upstream as OTLP, with
+a dashboard, alerts and runbook. The metrics pipeline follows —
 [board](https://bored.desync.link/boards/otlp-collector-oidc).
 
 ## Licence

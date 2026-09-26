@@ -17,6 +17,31 @@ processors:
     check_interval: 1s
     limit_mib: 64
     spike_limit_mib: 16
+  # The payload bounds (bounds.go): a service.name outside
+  # ALLOWED_SERVICE_NAMES, or a timestamp older than MAX_PAST_AGE, drops the
+  # item after the client has had its 200; the filter's own counters on :8888
+  # show what was dropped.
+  filter/bounds:
+    error_mode: ignore
+    traces:
+      resource:
+        - "not IsString(resource.attributes[\"service.name\"]) or not IsMatch(resource.attributes[\"service.name\"], \"^(?:app-.*|integration)$$\")"
+      span:
+        - "span.start_time < Now() - Duration(\"48h0m0s\")"
+    logs:
+      resource:
+        - "not IsString(resource.attributes[\"service.name\"]) or not IsMatch(resource.attributes[\"service.name\"], \"^(?:app-.*|integration)$$\")"
+      log_record:
+        - "log.time_unix_nano != 0 and log.time < Now() - Duration(\"48h0m0s\")"
+  # Timestamps further ahead than MAX_FUTURE_SKEW become now.
+  transform/bounds:
+    error_mode: ignore
+    trace_statements:
+      - "set(span.start_time, Now()) where span.start_time > Now() + Duration(\"5m0s\")"
+      - "set(span.end_time, span.start_time) where span.end_time > Now() + Duration(\"5m0s\") and span.start_time > Now()"
+      - "set(span.end_time, Now()) where span.end_time > Now() + Duration(\"5m0s\")"
+    log_statements:
+      - "set(log.time, Now()) where log.time > Now() + Duration(\"5m0s\")"
   # Identity from the token, on every span and log record (identity.go).
   attributes/identity:
     actions:
@@ -102,9 +127,9 @@ service:
   pipelines:
     traces:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, attributes/identity, resource/identity, batch]
+      processors: [memory_limiter, filter/bounds, transform/bounds, attributes/identity, resource/identity, batch]
       exporters: [otlp_grpc]
     logs:
       receivers: [otlpsingleport]
-      processors: [memory_limiter, attributes/identity, resource/identity, batch]
+      processors: [memory_limiter, filter/bounds, transform/bounds, attributes/identity, resource/identity, batch]
       exporters: [otlp_grpc]

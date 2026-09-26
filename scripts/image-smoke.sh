@@ -27,7 +27,7 @@ reported=$(docker run --rm "$image" version)
 cid=$(docker run -d -p 127.0.0.1:4318:4318 -p 127.0.0.1:8888:8888 \
 	--user 10001:10001 --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
 	-e OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317 \
-	-e OIDC_ISSUER_URL=https://issuer.invalid -e OIDC_AUDIENCE=smoke "$image")
+	-e OIDC_ISSUER_URL=https://issuer.invalid -e OIDC_AUDIENCE=smoke -e ALLOWED_SERVICE_NAMES='.*' "$image")
 trap 'docker rm -f "$cid" >/dev/null' EXIT
 
 await_healthy() {
@@ -72,7 +72,7 @@ chmod 0755 "$tls" && chmod 0644 "$tls/cert.pem" "$tls/key.pem"
 mounted=$(docker run -d -p 127.0.0.1:4319:4318 -v "$tls:/tls:ro" \
 	-e TLS_CERT_FILE=/tls/cert.pem -e TLS_KEY_FILE=/tls/key.pem \
 	-e OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317 \
-	-e OIDC_ISSUER_URL=https://issuer.invalid -e OIDC_AUDIENCE=smoke "$image")
+	-e OIDC_ISSUER_URL=https://issuer.invalid -e OIDC_AUDIENCE=smoke -e ALLOWED_SERVICE_NAMES='.*' "$image")
 trap 'docker rm -f "$cid" "$mounted" >/dev/null; rm -rf "$tls"' EXIT
 await_healthy "$mounted"
 export_without_token https://localhost:4319 --cacert "$tls/cert.pem" || { docker logs "$mounted" >&2; exit 1; }

@@ -30,11 +30,13 @@ var shapes = map[string]map[string]string{
 		"OIDC_ISSUER_URL":             "https://idp.example.com/application/o/telemetry/",
 		"OIDC_AUDIENCE":               "telemetry",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317",
+		"ALLOWED_SERVICE_NAMES":       ".*",
 	},
 	// Every variable set to something other than its default.
 	"full": {
 		"OIDC_ISSUER_URL":             "https://idp.example.com/",
 		"OIDC_AUDIENCE":               "aud-1",
+		"ALLOWED_SERVICE_NAMES":       "app-.*|integration",
 		"OIDC_DISCOVERY_RETRY":        "5s",
 		"OIDC_JWKS_REFRESH":           "1h",
 		"REQUIRED_SCOPE":              "otlp:send",
@@ -65,6 +67,7 @@ var shapes = map[string]map[string]string{
 	"own-logs-otlp": {
 		"OIDC_ISSUER_URL":                  "https://idp.example.com/",
 		"OIDC_AUDIENCE":                    "telemetry",
+		"ALLOWED_SERVICE_NAMES":            "app-.*|integration",
 		"OTEL_EXPORTER_OTLP_ENDPOINT":      "https://tempo.example.com:4317",
 		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "http/protobuf",
 		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://loki.example.com/otlp/v1/logs",
@@ -78,6 +81,7 @@ var shapes = map[string]map[string]string{
 	"http": {
 		"OIDC_ISSUER_URL":             "https://idp.example.com/",
 		"OIDC_AUDIENCE":               "telemetry",
+		"ALLOWED_SERVICE_NAMES":       "app-.*|integration",
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "https://otlp.example.com/otlp/",
 		"OTEL_EXPORTER_OTLP_HEADERS":  "X-Scope-OrgID=tenant-1",
@@ -91,6 +95,7 @@ var shapes = map[string]map[string]string{
 	"per-signal": {
 		"OIDC_ISSUER_URL":                       "https://idp.example.com/",
 		"OIDC_AUDIENCE":                         "telemetry",
+		"ALLOWED_SERVICE_NAMES":                 "app-.*|integration",
 		"OTEL_EXPORTER_OTLP_ENDPOINT":           "https://tempo.example.com:4317",
 		"OTEL_EXPORTER_OTLP_HEADERS":            "authorization=Bearer%20abc,x-tenant=a",
 		"OTEL_EXPORTER_OTLP_TIMEOUT":            "2500",
@@ -111,6 +116,7 @@ var shapes = map[string]map[string]string{
 	"identity": {
 		"OIDC_ISSUER_URL":             "https://idp.example.com/",
 		"OIDC_AUDIENCE":               "telemetry",
+		"ALLOWED_SERVICE_NAMES":       "app-.*|integration",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317",
 		"CLAIM_ATTRIBUTES":            "sub=enduser.id, email=enduser.email",
 		"CLIENT_RESOURCE_ATTRIBUTES":  "deployment.environment.name=prod,telemetry_source=client",
@@ -120,6 +126,7 @@ var shapes = map[string]map[string]string{
 	"hostile": {
 		"OIDC_ISSUER_URL":             "https://idp.example.com/?a=${env:HOME}",
 		"OIDC_AUDIENCE":               "a\"b\nexporters: {}",
+		"ALLOWED_SERVICE_NAMES":       "app-.*|integration",
 		"REQUIRED_SCOPE":              "$${x}$",
 		"REQUIRED_CLAIMS":             "sub,'quoted',#hash",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317",
