@@ -501,7 +501,14 @@ and one for `/opentelemetry.proto.collector` (never stripped); rate limiting on 
 - **Image:** metadata and health checks; `docker run` with nothing mounted → 401 over
   the embedded certificate; a mounted pair → `curl --cacert` verifies the chain.
 - **Behind Traefik** (a real Traefik container): an OTLP/HTTP export and an
-  OTLP/gRPC export both reach the sink through the proxy.
+  OTLP/gRPC export both reach the sink through the proxy. As built
+  (`TestBehindTraefik`, Traefik 3.7.13 on the host network in front of the built
+  binary, not the image — the same code, and the harness's sinks and issuer stay on
+  loopback): the fidelity and token-profile tables run through it unchanged, once
+  unprefixed with one router and once mounted at `/otlp` with the HTTP prefix
+  stripped and gRPC routed separately; an unrouted path is the proxy's 404. The
+  compose example's labels were proven once by hand against Traefik's Docker
+  provider, both protocols answering the collector's `no token`.
 
 ## 10. Open questions — verify while building, do not assume
 

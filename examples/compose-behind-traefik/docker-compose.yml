@@ -1,0 +1,65 @@
+# otlp-collector-oidc behind an existing Traefik (docs/proxies/traefik.md).
+#
+# Traefik terminates public TLS and rate-limits; the collector serves its
+# embedded self-signed certificate on the one port, OTLP/gRPC and OTLP/HTTP.
+# Assumes a Traefik on the external network "proxy", with an entry point
+# "websecure", a certificate resolver "letsencrypt", and the serversTransport
+# in traefik-dynamic.yml loaded by its file provider (Traefik defines
+# serversTransports in a file, not in labels).
+services:
+  otlp-collector-oidc:
+    image: ${OTLP_COLLECTOR_OIDC_IMAGE:-ghcr.io/vcheesbrough/otlp-collector-oidc:edge}
+    restart: unless-stopped
+    environment:
+      OIDC_ISSUER_URL: https://auth.example.com/application/o/telemetry-prod/
+      OIDC_AUDIENCE: telemetry-prod
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4317
+      CLIENT_RESOURCE_ATTRIBUTES: deployment.environment.name=prod,telemetry_source=client
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=prod
+    networks: [proxy, default]
+    # Hardening. The image's own non-root user (10001) is the one that can
+    # read the embedded key; a different uid needs a mounted pair
+    # (TLS_CERT_FILE / TLS_KEY_FILE) it can read.
+    user: "10001:10001"
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]          # the rendered configuration is written here
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m        # above MEMORY_LIMIT_MIB (64) and its spike
+    # Never in a deploy health gate: its HEALTHCHECK says the process works,
+    # nothing about the upstream or the provider, and a gate on it adds
+    # nothing to the deploy. Nothing depends_on it with service_healthy.
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: proxy
+      # One service: the one port, over HTTPS, HTTP/2 to the backend (gRPC
+      # needs it; Traefik negotiates it by ALPN), trusting the embedded
+      # certificate through the file-defined serversTransport.
+      traefik.http.services.otlp-collector-oidc.loadbalancer.server.port: "4318"
+      traefik.http.services.otlp-collector-oidc.loadbalancer.server.scheme: https
+      traefik.http.services.otlp-collector-oidc.loadbalancer.serverstransport: otlp-collector-oidc@file
+      # One router when /v1/ is free on the host: both protocols, nothing
+      # stripped. The gRPC client is given https://telemetry.example.com.
+      traefik.http.routers.otlp-collector-oidc.rule: Host(`telemetry.example.com`) && (PathPrefix(`/v1/`) || PathPrefix(`/opentelemetry.proto.collector`))
+      traefik.http.routers.otlp-collector-oidc.entrypoints: websecure
+      traefik.http.routers.otlp-collector-oidc.tls.certresolver: letsencrypt
+      traefik.http.routers.otlp-collector-oidc.service: otlp-collector-oidc
+      traefik.http.routers.otlp-collector-oidc.middlewares: otlp-collector-oidc-ratelimit
+      # The product does not rate-limit; the edge does, by source address.
+      traefik.http.middlewares.otlp-collector-oidc-ratelimit.ratelimit.average: "100"
+      traefik.http.middlewares.otlp-collector-oidc-ratelimit.ratelimit.burst: "200"
+      #
+      # Where /v1/ is taken on the host, mount OTLP/HTTP under a prefix and
+      # strip it, and route gRPC separately, never stripped. Replace the
+      # router above with these two:
+      #
+      # traefik.http.routers.otlp-http.rule: Host(`app.example.com`) && PathPrefix(`/otlp/v1/`)
+      # traefik.http.routers.otlp-http.middlewares: otlp-strip,otlp-collector-oidc-ratelimit
+      # traefik.http.middlewares.otlp-strip.stripprefix.prefixes: /otlp
+      # traefik.http.routers.otlp-grpc.rule: Host(`app.example.com`) && PathPrefix(`/opentelemetry.proto.collector`)
+      # traefik.http.routers.otlp-grpc.middlewares: otlp-collector-oidc-ratelimit
+      # (each also: entrypoints, tls.certresolver, service otlp-collector-oidc)
+
+networks:
+  proxy:
+    external: true

@@ -160,6 +160,12 @@ func (c *HTTPClient) WithBearer(token string) *HTTPClient {
 // NewHTTPClient returns a client for addr that trusts pool. It negotiates
 // HTTP/2 unless http1 is set.
 func NewHTTPClient(addr string, pool *x509.CertPool, http1 bool) *HTTPClient {
+	return NewHTTPClientTo("https://"+addr, pool, http1)
+}
+
+// NewHTTPClientTo is NewHTTPClient for a base URL, which may carry a mount
+// prefix the OTLP paths are appended to.
+func NewHTTPClientTo(base string, pool *x509.CertPool, http1 bool) *HTTPClient {
 	tr := &http.Transport{
 		TLSClientConfig:   &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 		ForceAttemptHTTP2: !http1,
@@ -167,7 +173,7 @@ func NewHTTPClient(addr string, pool *x509.CertPool, http1 bool) *HTTPClient {
 	if http1 {
 		tr.TLSClientConfig.NextProtos = []string{"http/1.1"}
 	}
-	return &HTTPClient{base: "https://" + addr, client: &http.Client{Transport: tr}}
+	return &HTTPClient{base: base, client: &http.Client{Transport: tr}}
 }
 
 // Do sends one request and reads the whole answer.

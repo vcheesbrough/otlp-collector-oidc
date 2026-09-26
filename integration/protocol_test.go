@@ -51,10 +51,17 @@ type clients struct {
 // or no token when it is empty.
 func newClients(t *testing.T, addr string, pool *x509.CertPool, bearer string) clients {
 	t.Helper()
+	return newClientsVia(t, harness.DirectTo(addr, pool), bearer)
+}
+
+// newClientsVia is newClients through any frontend: a proxy in front of the
+// collector, or the collector itself.
+func newClientsVia(t *testing.T, f harness.Frontend, bearer string) clients {
+	t.Helper()
 	return clients{
-		http:  harness.NewHTTPClient(addr, pool, false).WithBearer(bearer),
-		http1: harness.NewHTTPClient(addr, pool, true).WithBearer(bearer),
-		grpc:  harness.NewGRPCClient(t, addr, pool).WithBearer(bearer),
+		http:  harness.NewHTTPClientTo(f.BaseURL(), f.Pool(), false).WithBearer(bearer),
+		http1: harness.NewHTTPClientTo(f.BaseURL(), f.Pool(), true).WithBearer(bearer),
+		grpc:  harness.NewGRPCClient(t, f.GRPCTarget(), f.Pool()).WithBearer(bearer),
 	}
 }
 

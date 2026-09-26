@@ -1,0 +1,8 @@
+# For Traefik's file provider: the transport the collector's service uses.
+http:
+  serversTransports:
+    otlp-collector-oidc:
+      # The embedded certificate is self-signed per image build and
+      # identifies nothing; the hop stays inside the deployment's network.
+      # With a mounted pair signed by your CA, use rootCAs instead.
+      insecureSkipVerify: true

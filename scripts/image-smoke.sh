@@ -21,7 +21,11 @@ label=$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.ver
 reported=$(docker run --rm "$image" version)
 [ "$reported" = "$version" ] || fail "'version' reports '$reported', want '$version'"
 
+# The embedded pair under the hardening examples/compose-behind-traefik uses:
+# a read-only root with /tmp for the rendered configuration, no capabilities,
+# no privilege gain, the image's own non-root user.
 cid=$(docker run -d -p 127.0.0.1:4318:4318 -p 127.0.0.1:8888:8888 \
+	--user 10001:10001 --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
 	-e OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317 \
 	-e OIDC_ISSUER_URL=https://issuer.invalid -e OIDC_AUDIENCE=smoke "$image")
 trap 'docker rm -f "$cid" >/dev/null' EXIT

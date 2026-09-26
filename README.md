@@ -94,7 +94,10 @@ available to it.
 **Behind a reverse proxy.** The proxy terminates public TLS and forwards HTTPS to the
 container over HTTP/2 (gRPC needs it), trusting the container's certificate, and does
 the rate limiting. Route both `/v1/…` and `/opentelemetry.proto.collector…` to the one
-port.
+port; strip a mount prefix from the HTTP paths only. [The proxy
+guide](docs/proxies/traefik.md) states the contract and Traefik exactly, and
+[`examples/compose-behind-traefik/`](examples/compose-behind-traefik/) is a complete
+compose service with its labels and hardening.
 
 **Direct.** Mount a real certificate and key and point `TLS_CERT_FILE` / `TLS_KEY_FILE`
 at them. The product does not rate-limit; a direct deployment supplies that itself.
