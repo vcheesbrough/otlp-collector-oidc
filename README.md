@@ -44,7 +44,8 @@ curl -k https://localhost:4318/v1/traces \
 
 `$ACCESS_TOKEN` is a JWT access token from that provider carrying the
 `telemetry:write` scope; [the token profile](docs/token-profile.md) states exactly
-what is accepted. Without one the answer is `401` and names what is wrong —
+what is accepted, and [the provider guides](docs/providers/README.md) — authentik,
+with a blueprint — say how to configure a provider to issue one. Without one the answer is `401` and names what is wrong —
 `{"code":16,"message":"no token"}` — and until the provider's keys have loaded it is
 `503` `not ready` with `Retry-After`. `-k` accepts the image's embedded self-signed
 certificate. OTLP/gRPC clients use the same port and get the same answers as

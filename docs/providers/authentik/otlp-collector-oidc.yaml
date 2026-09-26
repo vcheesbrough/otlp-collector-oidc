@@ -1,0 +1,96 @@
+# authentik blueprint: an OAuth2/OpenID provider whose access tokens
+# otlp-collector-oidc accepts. Tested with authentik 2026.8.3.
+#
+# One file for every environment: apply it once per product environment with
+# its own context (see docs/providers/authentik.md). The application slug fixes
+# the issuer URL, <authentik>/application/o/<app_slug>/, which is the
+# collector's OIDC_ISSUER_URL; client_id is its OIDC_AUDIENCE.
+version: 1
+metadata:
+  name: otlp-collector-oidc
+  labels:
+    blueprints.goauthentik.io/description: OAuth2 provider for otlp-collector-oidc clients
+context:
+  # The application's slug, and so the issuer path. Never change it once
+  # clients hold tokens: the issuer changes with it.
+  app_slug: otlp-collector-oidc
+  app_name: OTLP collector
+  # The client id: the token's aud, and the collector's OIDC_AUDIENCE.
+  client_id: otlp-collector-oidc
+  # Where the client application receives the authorization code.
+  redirect_uri: https://app.example.com/oauth/callback
+  # Members of this group may send telemetry; nobody else gets a token.
+  group_name: otlp-collector-oidc senders
+  # The key that signs tokens. It is what makes the access token a signed
+  # JWT the collector can verify; generate a dedicated one (Admin →
+  # Certificates → Generate) and name it here.
+  signing_key_name: authentik Self-signed Certificate
+entries:
+  # The scope the collector requires (REQUIRED_SCOPE). It adds no claim:
+  # being granted it is the permission.
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-telemetry-write
+    identifiers:
+      name: "otlp-collector-oidc: telemetry:write"
+    attrs:
+      name: "otlp-collector-oidc: telemetry:write"
+      scope_name: telemetry:write
+      description: Send telemetry
+      expression: return {}
+
+  - model: authentik_providers_oauth2.oauth2provider
+    id: provider
+    identifiers:
+      name: !Context app_name
+    attrs:
+      name: !Context app_name
+      # A browser or mobile app cannot keep a secret: public, with PKCE.
+      client_type: public
+      client_id: !Context client_id
+      # Declared, not defaulted: an interactive sign-in and silent renewal.
+      grant_types:
+        - authorization_code
+        - refresh_token
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, !Context signing_key_name]]
+      # sub becomes user.id on every span. hashed_user_id is stable and
+      # reveals nothing; changing sub_mode later changes every user's id.
+      sub_mode: hashed_user_id
+      issuer_mode: per_provider
+      access_token_validity: minutes=10
+      refresh_token_validity: days=30
+      redirect_uris:
+        - matching_mode: strict
+          url: !Context redirect_uri
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+        - !KeyOf scope-telemetry-write
+
+  - model: authentik_core.application
+    id: application
+    identifiers:
+      slug: !Context app_slug
+    attrs:
+      name: !Context app_name
+      provider: !KeyOf provider
+      policy_engine_mode: any
+
+  # The "who may send" switch: add a user to the group to let them send,
+  # remove them to stop their next token.
+  - model: authentik_core.group
+    id: group
+    identifiers:
+      name: !Context group_name
+    attrs:
+      name: !Context group_name
+
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf application
+      group: !KeyOf group
+    attrs:
+      order: 0
