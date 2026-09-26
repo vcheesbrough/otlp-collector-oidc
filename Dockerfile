@@ -21,7 +21,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # them the Apache-2.0 OpenTelemetry Collector components.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH scripts/third-party-notices.sh /out/licenses/third-party
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH scripts/third-party-notices.sh /out/licenses/third-party
 
 # TLS: a self-signed pair generated at image build, so the image serves TLS
 # with nothing mounted. It is per build and public: encryption in transit

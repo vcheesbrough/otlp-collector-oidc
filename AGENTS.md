@@ -197,7 +197,12 @@ rendered from the environment by `run`). One Go module.
 
 ## Status
 
-Pre-release. Iteration 1 (`0.1.0`) delivers the module, the single-port receiver, the shipped
+MVP reached with iteration 12 (`0.12.0`, then `1.0.0`, the maintainer's hand-cut
+tag): the observability sign-off, the standards pass, the image's licences and
+notices; DESIGN §10 has nothing open. Post-MVP iterations are `1.N.0`, N continuing
+from 13.
+
+History: iteration 1 (`0.1.0`) delivers the module, the single-port receiver, the shipped
 pipeline for traces and logs, the image, CI with its test report and badges, and the
 integration harness. Iteration 2 (`0.2.0`) authenticates every request with an OIDC
 access token (`extension/oidcclientauth`, `docs/token-profile.md`) and adds a fake
