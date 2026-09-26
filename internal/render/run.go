@@ -101,7 +101,13 @@ func writeRendered(logger *zap.Logger, s *Settings, tempDir string) (string, err
 	}
 	fields := append([]zap.Field{zap.String("source", "rendered"), zap.String("path", path)}, resolved(s)...)
 	logger.Info("Rendered the configuration from the environment", fields...)
-	logger.Debug("Rendered configuration", zap.String("path", path), zap.String("yaml", string(yaml)))
+	// The file holds the upstream headers, which may be credentials; the
+	// logged copy does not.
+	shown := *s
+	shown.Upstream = s.Upstream.redacted()
+	if logged, err := Render(shown); err == nil {
+		logger.Debug("Rendered configuration", zap.String("path", path), zap.String("yaml", string(logged)))
+	}
 	return path, nil
 }
 
@@ -128,17 +134,19 @@ func writeExclusive(path string, data []byte) error {
 	return nil
 }
 
-// resolved is every variable in s with the value it took, default or set.
-// None of the variables rendered today is secret; one that is must be left
-// out here.
+// resolved is every variable in s with the value it took, default or set,
+// and each signal's upstream as resolved. None of the tagged variables is
+// secret; the upstream's headers are named, never valued.
 func resolved(s *Settings) []zap.Field {
 	var out []zap.Field
 	for _, g := range groupsOf(reflect.ValueOf(s).Elem()) {
 		for _, v := range g.variables {
-			out = append(out, zap.String(v.name, display(v.field)))
+			if v.field.IsValid() {
+				out = append(out, zap.String(v.name, display(v.field)))
+			}
 		}
 	}
-	return out
+	return append(out, s.Upstream.logFields()...)
 }
 
 func display(v reflect.Value) string {

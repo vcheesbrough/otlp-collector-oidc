@@ -25,6 +25,17 @@ exporters:
     endpoint: "collector:4317"
     tls:
       insecure: true
+    headers:
+      - name: "x-a"
+        value: "\"$${env:HOME}\nexporters: {}"
+    timeout: "10s"
+    compression: "gzip"
+    sending_queue:
+      queue_size: 1000
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: "1m0s"
+      max_interval: "30s"
 
 extensions:
   health_check:

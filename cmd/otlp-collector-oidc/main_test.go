@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configopaque"
+	"go.opentelemetry.io/collector/exporter/otlpexporter"
 	"go.opentelemetry.io/collector/otelcol"
 
 	"github.com/vcheesbrough/otlp-collector-oidc/extension/oidcclientauth"
@@ -63,4 +65,11 @@ func TestHostileValuesArriveLiterally(t *testing.T) {
 	assert.Equal(t, "a\"b\nexporters: {}", auth.Audience)
 	assert.Equal(t, "$${x}$", auth.RequiredScope)
 	assert.Equal(t, []string{"sub", "'quoted'", "#hash"}, auth.RequiredClaims)
+
+	// A header value is percent-decoded by the resolver, then quoted.
+	exp, ok := cfg.Exporters[component.MustNewID("otlp_grpc")].(*otlpexporter.Config)
+	require.True(t, ok)
+	require.Len(t, exp.ClientConfig.Headers, 1)
+	assert.Equal(t, "x-a", exp.ClientConfig.Headers[0].Name)
+	assert.Equal(t, configopaque.String("\"${env:HOME}\nexporters: {}"), exp.ClientConfig.Headers[0].Value)
 }

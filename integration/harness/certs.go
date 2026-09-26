@@ -27,7 +27,7 @@ type Certificate struct {
 }
 
 // NewCertificate generates an ECDSA P-256 pair valid for localhost and
-// 127.0.0.1.
+// 127.0.0.1, usable by a server or, for mTLS, a client.
 func NewCertificate(t *testing.T) Certificate {
 	t.Helper()
 
@@ -42,7 +42,7 @@ func NewCertificate(t *testing.T) Certificate {
 		NotBefore:             time.Now().Add(-time.Minute),
 		NotAfter:              time.Now().Add(time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 		DNSNames:              []string{"localhost"},

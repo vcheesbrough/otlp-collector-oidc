@@ -52,11 +52,6 @@ type IdentitySettings struct {
 	RejectionLogInterval time.Duration `env:"REJECTION_LOG_INTERVAL" default:"60s"                      doc:"At most one warning per refusal reason per interval"`
 }
 
-// UpstreamSettings configures where telemetry is forwarded.
-type UpstreamSettings struct {
-	Endpoint URLEndpoint `env:"OTEL_EXPORTER_OTLP_ENDPOINT" required:"true" doc:"Upstream OTLP/gRPC endpoint as a URL: 'http://host:4317' is plaintext, 'https://host:4317' is TLS verified against the system roots (or 'SSL_CERT_FILE')"`
-}
-
 // ListenerSettings configures the one OTLP listener.
 type ListenerSettings struct {
 	ListenAddr          Addr          `env:"LISTEN_ADDR"            default:"0.0.0.0:4318"                          doc:"The one listener: TLS, OTLP/gRPC and OTLP/HTTP on the same port"`
@@ -153,7 +148,15 @@ func Load(lookup Lookup, dst any) error {
 	var errs []error
 	for _, g := range groupsOf(root.Elem()) {
 		var groupErrs []error
+		if g.resolver != nil {
+			if err := g.resolver.resolve(lookup); err != nil {
+				groupErrs = append(groupErrs, err)
+			}
+		}
 		for _, v := range g.variables {
+			if !v.field.IsValid() {
+				continue // the resolver's
+			}
 			if err := v.load(lookup); err != nil {
 				groupErrs = append(groupErrs, err)
 			}
@@ -172,18 +175,32 @@ func Load(lookup Lookup, dst any) error {
 // group is one group struct and its variables, in declaration order.
 type group struct {
 	title     string
+	name      string // the field's name in its root, as the template refers to it
 	value     reflect.Value
 	variables []variable
+	// resolver, when set, reads the group's variables itself: they have no
+	// field of their own, and the template reaches the group through its
+	// methods.
+	resolver resolvedGroup
+	// note follows the group's table in the reference.
+	note string
 }
 
-// variable is one tagged field.
+// variable is one tagged field, or one variable of a resolved group.
 type variable struct {
 	name     string
 	required bool
 	def      string
 	doc      string
-	field    reflect.Value
-	path     string // Group.Field, as the template refers to it
+	field    reflect.Value // zero for a resolved group's variable
+	path     string        // Group.Field, as the template refers to it
+}
+
+// resolvedGroup is a group whose variables mean more than one value each, so
+// another package reads and documents them rather than the tags.
+type resolvedGroup interface {
+	resolve(lookup Lookup) error
+	reference() (note string, vars []variable)
 }
 
 func groupsOf(root reflect.Value) []group {
@@ -194,7 +211,13 @@ func groupsOf(root reflect.Value) []group {
 		if !ok {
 			continue
 		}
-		g := group{title: title, value: root.Field(i)}
+		g := group{title: title, name: sf.Name, value: root.Field(i)}
+		if r, ok := g.value.Addr().Interface().(resolvedGroup); ok {
+			g.resolver = r
+			g.note, g.variables = r.reference()
+			out = append(out, g)
+			continue
+		}
 		for j := range g.value.NumField() {
 			vf := g.value.Type().Field(j)
 			name, ok := vf.Tag.Lookup("env")

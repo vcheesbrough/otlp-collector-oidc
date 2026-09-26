@@ -21,10 +21,14 @@ processors:
     timeout: "5s"
 
 exporters:
-  otlp_grpc:
-    endpoint: "collector:4317"
+  otlp_http:
+    endpoint: "https://otlp.example.com/otlp/"
     tls:
-      insecure: true
+      insecure: false
+      insecure_skip_verify: false
+    headers:
+      - name: "X-Scope-OrgID"
+        value: "tenant-1"
     timeout: "10s"
     compression: "gzip"
     sending_queue:
@@ -38,7 +42,7 @@ extensions:
   health_check:
     endpoint: "127.0.0.1:13133"
   oidcclientauth:
-    issuer_url: "https://idp.example.com/application/o/telemetry/"
+    issuer_url: "https://idp.example.com/"
     audience: "telemetry"
     discovery_retry: "30s"
     jwks_refresh: "10m0s"
@@ -66,8 +70,8 @@ service:
     traces:
       receivers: [otlpsingleport]
       processors: [memory_limiter, batch]
-      exporters: [otlp_grpc]
+      exporters: [otlp_http]
     logs:
       receivers: [otlpsingleport]
       processors: [memory_limiter, batch]
-      exporters: [otlp_grpc]
+      exporters: [otlp_http]

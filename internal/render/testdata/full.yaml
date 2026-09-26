@@ -30,6 +30,15 @@ exporters:
     endpoint: "upstream.example.com:4317"
     tls:
       insecure: false
+      insecure_skip_verify: false
+    timeout: "10s"
+    compression: "gzip"
+    sending_queue:
+      queue_size: 1000
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: "1m0s"
+      max_interval: "30s"
 
 extensions:
   health_check:

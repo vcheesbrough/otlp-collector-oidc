@@ -31,7 +31,20 @@ standard Go way: mount the CA and set `SSL_CERT_FILE` or `SSL_CERT_DIR`.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | **required** | Upstream OTLP/gRPC endpoint as a URL: `http://host:4317` is plaintext, `https://host:4317` is TLS verified against the system roots (or `SSL_CERT_FILE`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | **required** | Upstream URL. `http://` is plaintext, `https://` is TLS verified against the system roots (or `SSL_CERT_FILE`). With `grpc` it is `scheme://host:port` only; with `http/protobuf` the base endpoint gets `/v1/<signal>` appended and a per-signal one is used verbatim. Not needed when all three per-signal endpoints are set |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | `grpc` or `http/protobuf`; selects the exporter component |
+| `OTEL_EXPORTER_OTLP_HEADERS` | *(empty)* | `key=value,key2=value2` sent on every export, values percent-decoded: a tenant id, a hosted backend's token. Never logged |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` | `10000` | Export timeout in milliseconds |
+| `OTEL_EXPORTER_OTLP_COMPRESSION` | `gzip` | `gzip` or `none` |
+| `OTEL_EXPORTER_OTLP_CERTIFICATE` | *(empty)* | CA file that alone verifies the upstream's certificate, in place of the system roots |
+| `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` | *(empty)* | Client certificate (PEM) for mTLS to the upstream; set together with `OTEL_EXPORTER_OTLP_CLIENT_KEY` |
+| `OTEL_EXPORTER_OTLP_CLIENT_KEY` | *(empty)* | Its private key (PEM) |
+| `OTEL_EXPORTER_OTLP_INSECURE` | `false` | `true` for plaintext gRPC whatever the scheme; with `http/protobuf` use an `http://` URL instead |
+| `UPSTREAM_TLS_INSECURE_SKIP_VERIFY` | `false` | `true` accepts an upstream certificate that does not verify. No SDK equivalent; applies to every TLS upstream |
+| `UPSTREAM_QUEUE_SIZE` | `1000` | Export requests held per exporter and pipeline while the upstream is unreachable; beyond it they are dropped and counted. No SDK equivalent |
+| `UPSTREAM_RETRY_MAX_ELAPSED` | `60s` | How long a failing export is retried before it is dropped and counted; `0s` retries forever. No SDK equivalent |
+
+Every `OTEL_EXPORTER_OTLP_*` variable above also has `OTEL_EXPORTER_OTLP_TRACES_*`, `OTEL_EXPORTER_OTLP_LOGS_*` and `OTEL_EXPORTER_OTLP_METRICS_*` forms, which take precedence for that signal, as the OpenTelemetry SDK specification defines them. One exporter is rendered per distinct signal configuration, so with no per-signal variable set all signals share one. The `UPSTREAM_*` variables apply to every exporter.
 
 ## Listener and TLS
 

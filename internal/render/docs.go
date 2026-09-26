@@ -47,6 +47,9 @@ func Reference() []byte {
 			}
 			fmt.Fprintf(&b, "| `%s` | %s | %s |\n", v.name, def, codeSpan.ReplaceAllString(v.doc, "$1`$2`"))
 		}
+		if g.note != "" {
+			fmt.Fprintf(&b, "\n%s\n", g.note)
+		}
 	}
 	return b.Bytes()
 }

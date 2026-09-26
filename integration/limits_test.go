@@ -142,6 +142,31 @@ func TestRefusesToStart(t *testing.T) {
 		{name: "upstream with a path", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "https://gw.example.com:4317/otlp")}, wantText: "must be scheme://host:port only"},
 		{name: "upstream with credentials", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "https://user:secret@gw.example.com:4317")}, wantText: `"https://user:xxxxx@gw.example.com:4317": must be scheme://host:port only`, absentText: "secret"}, // #nosec G101 -- a made-up password, to prove it is never printed
 		{name: "upstream with a query", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_ENDPOINT", "https://gw.example.com:4317?tenant=a")}, wantText: "must be scheme://host:port only"},
+		{name: "bad upstream protocol", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")}, wantText: `invalid OTEL_EXPORTER_OTLP_PROTOCOL "http/json": must be grpc or http/protobuf`},
+		{name: "timeout as a duration", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "10s")}, wantText: `invalid OTEL_EXPORTER_OTLP_LOGS_TIMEOUT "10s": must be a whole number of milliseconds`},
+		{name: "bad compression", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_COMPRESSION", "zstd")}, wantText: `invalid OTEL_EXPORTER_OTLP_COMPRESSION "zstd": must be gzip or none`},
+		{name: "bad insecure", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_INSECURE", "yes")}, wantText: `invalid OTEL_EXPORTER_OTLP_INSECURE "yes": must be true or false`},
+		{name: "bad queue size", opts: harness.Options{Env: with("UPSTREAM_QUEUE_SIZE", "0")}, wantText: `invalid UPSTREAM_QUEUE_SIZE "0": must be a whole number, at least 1`},
+		{name: "bad retry limit", opts: harness.Options{Env: with("UPSTREAM_RETRY_MAX_ELAPSED", "-1s")}, wantText: `invalid UPSTREAM_RETRY_MAX_ELAPSED "-1s": must be a duration`},
+		{name: "headers without a value", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_HEADERS", "x-ok=1,Authorization: Bearer hunter2")}, wantText: "invalid OTEL_EXPORTER_OTLP_HEADERS: pair 2 is not key=value", absentText: "hunter2"}, // #nosec G101 -- made up, to prove it is never printed
+		{name: "per-signal gRPC upstream with a path", opts: harness.Options{Env: set("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "https://gw.example.com:4317/v1/traces")}, wantText: "invalid OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", alsoText: "must be scheme://host:port only"},
+		{name: "http upstream with credentials", opts: harness.Options{Env: map[string]string{
+			"OIDC_ISSUER_URL":             "http://127.0.0.1:1",
+			"OIDC_AUDIENCE":               harness.Audience,
+			"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+			"OTEL_EXPORTER_OTLP_ENDPOINT": "https://user:secret@gw.example.com/otlp",
+		}}, wantText: `"https://user:xxxxx@gw.example.com/otlp": must be a URL with no credentials, query or fragment`, absentText: "secret"}, // #nosec G101 -- a made-up password, to prove it is never printed
+		// Rules across the upstream variables.
+		{name: "client certificate without its key", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE", "/run/client.pem")}, wantText: "OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE and OTEL_EXPORTER_OTLP_CLIENT_KEY must be set together"},
+		{name: "CA for a plaintext upstream", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_CERTIFICATE", "/run/ca.pem")}, wantText: "OTEL_EXPORTER_OTLP_CERTIFICATE is set, but every upstream is plaintext"},
+		{name: "per-signal CA for a plaintext signal", opts: harness.Options{Env: with("OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE", "/run/ca.pem")}, wantText: "OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE is set, but the logs upstream is plaintext"},
+		{name: "insecure over https with http/protobuf", opts: harness.Options{Env: map[string]string{
+			"OIDC_ISSUER_URL":             "http://127.0.0.1:1",
+			"OIDC_AUDIENCE":               harness.Audience,
+			"OTEL_EXPORTER_OTLP_ENDPOINT": "https://gw.example.com",
+			"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+			"OTEL_EXPORTER_OTLP_INSECURE": "true",
+		}}, wantText: "OTEL_EXPORTER_OTLP_INSECURE=true applies to grpc only"},
 		{name: "bad log level", opts: harness.Options{Env: with("LOG_LEVEL", "verbose")}, wantText: `invalid LOG_LEVEL "verbose": must be debug, info, warn or error`},
 		{name: "bad log format", opts: harness.Options{Env: with("LOG_FORMAT", "text")}, wantText: `invalid LOG_FORMAT "text": must be json or console`},
 		// Faults in different groups are reported together.

@@ -21,24 +21,48 @@ processors:
     timeout: "5s"
 
 exporters:
-  otlp_grpc:
-    endpoint: "collector:4317"
+  otlp_grpc/traces:
+    endpoint: "tempo.example.com:4317"
     tls:
-      insecure: true
-    timeout: "10s"
-    compression: "gzip"
+      insecure: false
+      insecure_skip_verify: true
+      ca_file: "/run/upstream/ca.pem"
+      cert_file: "/run/upstream/client.pem"
+      key_file: "/run/upstream/client-key.pem"
+    headers:
+      - name: "authorization"
+        value: "Bearer abc"
+      - name: "x-tenant"
+        value: "a"
+    timeout: "2.5s"
+    compression: "none"
     sending_queue:
-      queue_size: 1000
+      queue_size: 50
     retry_on_failure:
       enabled: true
-      max_elapsed_time: "1m0s"
+      max_elapsed_time: "5m0s"
+      max_interval: "30s"
+  otlp_http/logs:
+    logs_endpoint: "http://loki.example.com:3100/otlp/v1/logs"
+    tls:
+      insecure: true
+    headers:
+      - name: "x-scope-orgid"
+        value: "b"
+    timeout: "2.5s"
+    compression: "none"
+    sending_queue:
+      queue_size: 50
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: "5m0s"
       max_interval: "30s"
 
 extensions:
   health_check:
     endpoint: "127.0.0.1:13133"
   oidcclientauth:
-    issuer_url: "https://idp.example.com/application/o/telemetry/"
+    issuer_url: "https://idp.example.com/"
     audience: "telemetry"
     discovery_retry: "30s"
     jwks_refresh: "10m0s"
@@ -66,8 +90,8 @@ service:
     traces:
       receivers: [otlpsingleport]
       processors: [memory_limiter, batch]
-      exporters: [otlp_grpc]
+      exporters: [otlp_grpc/traces]
     logs:
       receivers: [otlpsingleport]
       processors: [memory_limiter, batch]
-      exporters: [otlp_grpc]
+      exporters: [otlp_http/logs]
