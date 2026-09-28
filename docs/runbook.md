@@ -112,15 +112,24 @@ the queue drains by itself.
 
 **Not shipped as a rule**, because its threshold is the deployer's: what is
 normal depends on how many users a product has and how much each client sends.
-Every deployment on a public path should still carry one (the contract's "alert
-on ingest volume itself"), on the accepted rate this collector exports:
+A public ingest lets anyone holding a valid token spend your storage and egress,
+so every deployment on a public path should still carry an alert on the volume
+it accepts, on the accepted rate this collector exports:
 
 ```promql
 sum by (deployment_environment_name) (
-  rate({__name__=~"otelcol_receiver_accepted_spans|otelcol_receiver_accepted_log_records"}[10m])
+  (
+    label_replace(rate(otelcol_receiver_accepted_spans[10m]), "signal", "spans", "", "")
+    or label_replace(rate(otelcol_receiver_accepted_log_records[10m]), "signal", "log_records", "", "")
+  )
   * on (job, instance) group_left(deployment_environment_name) target_info{service_name="otlp-collector-oidc"}
 ) > <a few times the busiest normal hour>
 ```
+
+`label_replace` keeps the two signals' series apart: `rate()` drops the metric
+name, and without a label of their own they would collide. Client metric points
+are left out because the allowlists drop them by default; add
+`otelcol_receiver_accepted_metric_points` the same way once you open them.
 
 Point the rule's runbook link here.
 
@@ -130,13 +139,18 @@ client build that emits far more than it should, or a user (or a stolen token)
 spending your storage and egress. The edge's rate limit bounds it per source
 address; it does not bound a crowd.
 
-**Check first:** the **Accepted from clients** panel, by signal, and when it started. Then
-who: the stored spans and logs carry `user.id` and `user.name`, so group the
-upstream's data by those and by `service.name` and `service.version` over the
-window. One user is a stolen or abused token — remove them from the provider's
-group, and their next token is refused. One `service.version` is a client build —
-the fix is the client author's. Everyone at once is a client release that
-regressed.
+**Check first:** the **Accepted from clients** panel, by signal, and when it
+started. Then who: with the default `CLAIM_ATTRIBUTES` the stored spans and logs
+carry `user.id` and `user.name` (or whichever attributes you mapped the claims
+to), so group the upstream's data by those and by `service.name` and
+`service.version` over the window. One `service.version` is a client build — the
+fix is the client author's. Everyone at once is a client release that regressed.
+One user is a stolen or abused token: take them out of whatever lets the provider
+issue them a token (the group bound to the application, in the
+[authentik guide](providers/authentik.md)), which stops their **next** token.
+The collector has no revocation check, so a token already issued stays valid
+until its `exp` — the provider's access-token lifetime; if that cannot wait, use
+the emergency stop.
 
 **The emergency stop** is stopping the collector container: every client of that
 environment is refused at once, clients drop their events and carry on, and
