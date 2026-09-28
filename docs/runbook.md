@@ -1,7 +1,8 @@
 # Runbook
 
 What each alert in [`alerts/otlp-collector-oidc.yaml`](../alerts/otlp-collector-oidc.yaml)
-means and what to do. The [dashboard](../dashboards/otlp-collector-oidc.json) has a
+means and what to do, and the one alert a deployer writes for themselves
+([Ingest volume](#ingest-volume)). The [dashboard](../dashboards/otlp-collector-oidc.json) has a
 panel for each. Health (`:13133`) never follows the upstream or the provider, so
 none of these is fixed by restarting the container unless the entry says so.
 
@@ -106,3 +107,39 @@ down. Do not restart the collector: it drops what is queued. Fix the upstream an
 the queue drains by itself.
 
 **False positive:** a short upstream restart longer than the retry window.
+
+## Ingest volume
+
+**Not shipped as a rule**, because its threshold is the deployer's: what is
+normal depends on how many users a product has and how much each client sends.
+Every deployment on a public path should still carry one (the contract's "alert
+on ingest volume itself"), on the accepted rate this collector exports:
+
+```promql
+sum by (deployment_environment_name) (
+  rate({__name__=~"otelcol_receiver_accepted_spans|otelcol_receiver_accepted_log_records"}[10m])
+  * on (job, instance) group_left(deployment_environment_name) target_info{service_name="otlp-collector-oidc"}
+) > <a few times the busiest normal hour>
+```
+
+Point the rule's runbook link here.
+
+**Means:** clients are sending more than they normally do, and the upstream is
+storing it. Every accepted request carried a valid token, so this is either a
+client build that emits far more than it should, or a user (or a stolen token)
+spending your storage and egress. The edge's rate limit bounds it per source
+address; it does not bound a crowd.
+
+**Check first:** the **Accepted from clients** panel, by signal, and when it started. Then
+who: the stored spans and logs carry `user.id` and `user.name`, so group the
+upstream's data by those and by `service.name` and `service.version` over the
+window. One user is a stolen or abused token — remove them from the provider's
+group, and their next token is refused. One `service.version` is a client build —
+the fix is the client author's. Everyone at once is a client release that
+regressed.
+
+**The emergency stop** is stopping the collector container: every client of that
+environment is refused at once, clients drop their events and carry on, and
+nothing else is affected. There is no per-user or per-service switch.
+
+**False positive:** a genuine rise in users. Raise the threshold, deliberately.
